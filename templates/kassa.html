@@ -1,0 +1,866 @@
+{% extends "base.html" %}
+{% block title %}Касса | Касса Online{% endblock %}
+{% block content %}
+{% if db_error %}
+<section class="notice danger">{{ db_error }}</section>
+{% endif %}
+
+<div class="cash-toast hidden" id="cashToast"></div>
+
+<section class="kassa-shell">
+  <div class="kassa-main panel">
+    <div class="kassa-topbar">
+      <div class="kassa-title-line">
+        <span class="kassa-title-label">Касса:</span>
+        <span class="kassa-mode-pill retail" id="cashModeLabel">Розница</span>
+      </div>
+      <div class="kassa-top-actions">
+        <button type="button" class="secondary-button" id="toggleWholesaleButton">Для оптовиков</button>
+        <button type="button" class="secondary-button" id="clearCartButton">Очистить чек</button>
+      </div>
+    </div>
+
+    <div class="kassa-search-row">
+      <div class="cash-search-box">
+        <input type="text" id="cashSearchInput" placeholder="Сканируйте или введите название / штрихкод" autocomplete="off">
+        <div class="cash-search-suggestions hidden" id="cashSearchSuggestions"></div>
+      </div>
+      <button type="button" class="secondary-button" id="openScannerButton">Скан</button>
+      <button type="button" id="cashSearchButton">Добавить</button>
+    </div>
+
+    <div class="table-wrap">
+      <table class="cash-table" id="cashTable">
+        <thead>
+          <tr>
+            <th>№</th>
+            <th>Наименование</th>
+            <th>Количество</th>
+            <th class="retail-col">Цена</th>
+            <th class="wholesale-col hidden">Оптом</th>
+            <th class="retail-col">Сумма</th>
+            <th class="wholesale-col hidden">Сумма оптом</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="cashTableBody"></tbody>
+      </table>
+    </div>
+
+    <div class="cash-empty" id="cashEmptyState"></div>
+  </div>
+
+  <aside class="kassa-sidebar">
+    <section class="panel cash-total-panel">
+      <div class="cash-total-caption">Сумма</div>
+      <div class="cash-total-value" id="cashTotalValue">0 ₸</div>
+    </section>
+
+    <section class="panel cash-last-checks-panel">
+      <div class="panel-head">
+        <h2>Последние чеки</h2>
+      </div>
+      <div class="cash-last-checks" id="cashRecentChecks">
+        {% for check in recent_checks %}
+        <div class="cash-last-check">
+          <strong>{{ check.data|dt }}</strong>
+          <span>{{ check.display_sum|money }} ₸</span>
+          <small>{{ check.oplata }}{% if check.items_count %} • {{ check.items_count }} тов.{% endif %}</small>
+        </div>
+        {% else %}
+        <div class="cash-last-check empty">Пока нет продаж.</div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="cash-actions">
+      <button type="button" id="openPaymentButton" class="cash-primary-button">Оплатить</button>
+    </section>
+  </aside>
+</section>
+
+<div class="modal-backdrop hidden" id="paymentModal">
+  <div class="modal-card cash-payment-modal">
+    <div class="panel-head">
+      <h2>Оплата</h2>
+      <button type="button" class="icon-button" id="closePaymentModal">×</button>
+    </div>
+
+    <div class="cash-payment-total">
+      <span>Итого к оплате</span>
+      <strong id="paymentTotalLabel">0 ₸</strong>
+    </div>
+
+    <div class="cash-payment-methods">
+      <button type="button" class="secondary-button payment-method active" data-method="cash">Наличные</button>
+      <button type="button" class="secondary-button payment-method" data-method="card">Переводом</button>
+      <button type="button" class="secondary-button payment-method" data-method="debt">В долг</button>
+      <button type="button" class="secondary-button payment-method" data-method="mixed">Смешанная</button>
+    </div>
+
+    <div class="cash-payment-grid">
+      <label data-payment-field="cash">
+        <span>Наличные</span>
+        <input type="number" step="0.01" min="0" id="cashAmountInput" value="0">
+      </label>
+      <label data-payment-field="card" class="hidden">
+        <span>Переводом</span>
+        <input type="number" step="0.01" min="0" id="cardAmountInput" value="0">
+      </label>
+      <label data-payment-field="debt" class="hidden">
+        <span>Сумма в долг</span>
+        <input type="number" step="0.01" min="0" id="debtAmountInput" value="0">
+      </label>
+      <label data-payment-field="client" class="hidden">
+        <span>Клиент / комментарий</span>
+        <input type="text" id="debtClientInput" placeholder="Имя клиента">
+      </label>
+    </div>
+
+    <div class="cash-payment-meta" id="paymentMetaText"></div>
+    <div class="modal-error" id="paymentError"></div>
+
+    <div class="form-actions">
+      <button type="button" class="secondary-button" id="cancelPaymentButton">Отмена</button>
+      <button type="button" id="confirmPaymentButton">Провести продажу</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop hidden" id="scannerModal">
+  <div class="modal-card scanner-modal-card">
+    <div class="panel-head">
+      <h2>Сканировать штрихкод</h2>
+      <button type="button" class="icon-button" id="closeScannerModal">×</button>
+    </div>
+    <div class="scanner-reader" id="mobileScannerReader"></div>
+    <div class="scanner-status" id="scannerStatusText">Наведите камеру на штрихкод.</div>
+    <div class="form-actions">
+      <button type="button" class="secondary-button" id="cancelScannerButton">Закрыть</button>
+    </div>
+  </div>
+</div>
+
+<template id="cashRowTemplate">
+  <tr>
+    <td class="cash-line-number" data-label="№"></td>
+    <td data-label="Наименование">
+      <div class="cash-product-name"></div>
+      <div class="cash-product-meta"></div>
+    </td>
+    <td data-label="Количество"><input type="number" min="1" step="1" value="1" class="cash-qty-input"></td>
+    <td class="retail-col" data-label="Цена"><input type="number" min="0" step="1" value="0" class="cash-price-input retail-price-input"></td>
+    <td class="wholesale-col hidden" data-label="Оптом"><input type="number" min="0" step="1" value="0" class="cash-price-input wholesale-price-input"></td>
+    <td class="retail-col" data-label="Сумма"><span class="cash-sum retail-sum"></span></td>
+    <td class="wholesale-col hidden" data-label="Сумма оптом"><span class="cash-sum wholesale-sum"></span></td>
+    <td class="cash-remove-cell" data-label=""><button type="button" class="remove-row">Удалить</button></td>
+  </tr>
+</template>
+
+<script src="https://unpkg.com/html5-qrcode" defer></script>
+<script>
+  const cashProducts = {{ products|tojson }};
+  const cashTableBody = document.getElementById("cashTableBody");
+  const cashEmptyState = document.getElementById("cashEmptyState");
+  const cashRowTemplate = document.getElementById("cashRowTemplate");
+  const cashSearchInput = document.getElementById("cashSearchInput");
+  const cashSearchSuggestions = document.getElementById("cashSearchSuggestions");
+  const cashSearchButton = document.getElementById("cashSearchButton");
+  const openScannerButton = document.getElementById("openScannerButton");
+  const toggleWholesaleButton = document.getElementById("toggleWholesaleButton");
+  const clearCartButton = document.getElementById("clearCartButton");
+  const cashModeLabel = document.getElementById("cashModeLabel");
+  const cashTotalValue = document.getElementById("cashTotalValue");
+  const openPaymentButton = document.getElementById("openPaymentButton");
+  const paymentModal = document.getElementById("paymentModal");
+  const closePaymentModal = document.getElementById("closePaymentModal");
+  const cancelPaymentButton = document.getElementById("cancelPaymentButton");
+  const confirmPaymentButton = document.getElementById("confirmPaymentButton");
+  const paymentTotalLabel = document.getElementById("paymentTotalLabel");
+  const paymentError = document.getElementById("paymentError");
+  const paymentMetaText = document.getElementById("paymentMetaText");
+  const cashAmountInput = document.getElementById("cashAmountInput");
+  const cardAmountInput = document.getElementById("cardAmountInput");
+  const debtAmountInput = document.getElementById("debtAmountInput");
+  const debtClientInput = document.getElementById("debtClientInput");
+  const cashRecentChecks = document.getElementById("cashRecentChecks");
+  const scannerModal = document.getElementById("scannerModal");
+  const closeScannerModal = document.getElementById("closeScannerModal");
+  const cancelScannerButton = document.getElementById("cancelScannerButton");
+  const scannerStatusText = document.getElementById("scannerStatusText");
+  const cashToast = document.getElementById("cashToast");
+
+  let saleMode = "retail";
+  let paymentMethod = "cash";
+  const cart = [];
+  let searchSuggestions = [];
+  let activeSuggestionIndex = -1;
+  let barcodeScanner = null;
+  let scannerActive = false;
+  let cashToastTimer = null;
+
+  function normalize(value) {
+    return (value || "").toString().trim().toLowerCase();
+  }
+
+  function formatMoney(value) {
+    const numeric = Number(value || 0);
+    return `${numeric.toLocaleString("ru-RU", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} ₸`;
+  }
+
+  function showCashToast(message) {
+    if (!cashToast) {
+      return;
+    }
+    if (cashToastTimer) {
+      window.clearTimeout(cashToastTimer);
+    }
+    cashToast.textContent = message;
+    cashToast.classList.remove("hidden");
+    cashToast.classList.add("visible");
+    cashToastTimer = window.setTimeout(() => {
+      cashToast.classList.remove("visible");
+      cashToast.classList.add("hidden");
+    }, 2200);
+  }
+
+  function toggleEmptyState() {
+    cashEmptyState.classList.toggle("hidden", cart.length > 0);
+  }
+
+  function syncTableVisibility() {
+    document.querySelectorAll(".retail-col").forEach((cell) => cell.classList.toggle("hidden", saleMode === "wholesale"));
+    document.querySelectorAll(".wholesale-col").forEach((cell) => cell.classList.toggle("hidden", saleMode !== "wholesale"));
+    cashModeLabel.textContent = saleMode === "wholesale" ? "Опт" : "Розница";
+    cashModeLabel.classList.toggle("wholesale", saleMode === "wholesale");
+    cashModeLabel.classList.toggle("retail", saleMode !== "wholesale");
+    toggleWholesaleButton.textContent = saleMode === "wholesale" ? "Обычная продажа" : "Для оптовиков";
+  }
+
+  function getItemTotal(item, mode = saleMode) {
+    const unitPrice = mode === "wholesale" ? Number(item.tsena_optom || 0) : Number(item.tsena_prodazhi || 0);
+    return Number(item.quantity || 0) * unitPrice;
+  }
+
+  function recalcTotal() {
+    const total = cart.reduce((sum, item) => sum + getItemTotal(item), 0);
+    cashTotalValue.textContent = formatMoney(total);
+    paymentTotalLabel.textContent = formatMoney(total);
+    return total;
+  }
+
+  function renderRecentChecks(checks) {
+    if (!Array.isArray(checks) || !checks.length) {
+      cashRecentChecks.innerHTML = '<div class="cash-last-check empty">Пока нет продаж.</div>';
+      return;
+    }
+    cashRecentChecks.innerHTML = checks.map((check) => `
+      <div class="cash-last-check">
+        <strong>${check.data || ""}</strong>
+        <span>${check.summa || ""}</span>
+        <small>${check.oplata || ""}${check.items_count ? ` • ${check.items_count} тов.` : ""}</small>
+      </div>
+    `).join("");
+  }
+
+  function buildAliases(product) {
+    const aliases = [product.nazvanie];
+    (product.barcode_rows || []).forEach((barcode) => aliases.push(barcode));
+    return aliases.filter(Boolean);
+  }
+
+  function getExactBarcodeMatches(query) {
+    const normalized = normalize(query);
+    if (!normalized) {
+      return [];
+    }
+    return cashProducts.filter((product) =>
+      (product.barcode_rows || []).some((barcode) => normalize(barcode) === normalized)
+    );
+  }
+
+  function getProductSuggestions(query) {
+    const normalized = normalize(query);
+    if (!normalized) {
+      return [];
+    }
+
+    const terms = normalized.split(/\s+/).filter(Boolean);
+    const matches = cashProducts.filter((product) => {
+      const name = normalize(product.nazvanie);
+      const barcodeMatch = (product.barcode_rows || []).some((barcode) => normalize(barcode).includes(normalized));
+      if (barcodeMatch) {
+        return true;
+      }
+      return terms.every((term) => name.includes(term));
+    });
+
+    return matches
+      .sort((a, b) => {
+        const aName = normalize(a.nazvanie);
+        const bName = normalize(b.nazvanie);
+        const aStarts = aName.startsWith(normalized) ? 0 : 1;
+        const bStarts = bName.startsWith(normalized) ? 0 : 1;
+        if (aStarts !== bStarts) {
+          return aStarts - bStarts;
+        }
+        return aName.localeCompare(bName, "ru");
+      })
+      .slice(0, 8);
+  }
+
+  function closeSuggestions() {
+    cashSearchSuggestions.classList.add("hidden");
+    cashSearchSuggestions.innerHTML = "";
+    searchSuggestions = [];
+    activeSuggestionIndex = -1;
+  }
+
+  async function stopScanner() {
+    if (barcodeScanner && scannerActive) {
+      try {
+        await barcodeScanner.stop();
+      } catch (error) {
+      }
+    }
+    if (barcodeScanner) {
+      try {
+        await barcodeScanner.clear();
+      } catch (error) {
+      }
+    }
+    scannerActive = false;
+  }
+
+  async function closeScannerModalFn() {
+    await stopScanner();
+    scannerModal.classList.add("hidden");
+    scannerStatusText.textContent = "Наведите камеру на штрихкод.";
+  }
+
+  async function handleScannedBarcode(decodedText) {
+    const value = String(decodedText || "").trim();
+    if (!value) {
+      return;
+    }
+    cashSearchInput.value = value;
+    const exactBarcodeMatches = getExactBarcodeMatches(value);
+    if (exactBarcodeMatches.length > 1) {
+      await closeScannerModalFn();
+      renderBarcodeChoiceSuggestions(value, exactBarcodeMatches);
+      cashSearchInput.focus();
+      return;
+    }
+    if (exactBarcodeMatches.length === 1) {
+      addProductToCart(exactBarcodeMatches[0]);
+      await closeScannerModalFn();
+      cashSearchInput.value = "";
+      cashSearchInput.focus();
+      return;
+    }
+    const product = findProduct(value);
+    if (!product) {
+      scannerStatusText.textContent = `Товар не найден: ${value}`;
+      return;
+    }
+    addProductToCart(product);
+    await closeScannerModalFn();
+    cashSearchInput.value = "";
+    cashSearchInput.focus();
+  }
+
+  async function openScannerModalFn() {
+    scannerStatusText.textContent = "Запрашиваем камеру...";
+    scannerModal.classList.remove("hidden");
+
+    if (!window.Html5Qrcode) {
+      scannerStatusText.textContent = "Не удалось загрузить модуль сканера.";
+      return;
+    }
+
+    await stopScanner();
+    barcodeScanner = new Html5Qrcode("mobileScannerReader");
+
+    const config = {
+      fps: 10,
+      qrbox: { width: 260, height: 140 },
+      aspectRatio: 1.7778,
+      formatsToSupport: [
+        Html5QrcodeSupportedFormats.EAN_13,
+        Html5QrcodeSupportedFormats.EAN_8,
+        Html5QrcodeSupportedFormats.CODE_128,
+        Html5QrcodeSupportedFormats.CODE_39,
+        Html5QrcodeSupportedFormats.UPC_A,
+        Html5QrcodeSupportedFormats.UPC_E
+      ]
+    };
+
+    async function applyDefaultCameraZoom() {
+      const video = document.querySelector("#mobileScannerReader video");
+      const track = video?.srcObject?.getVideoTracks?.()[0];
+      const capabilities = track?.getCapabilities?.();
+      if (!capabilities?.zoom) {
+        return;
+      }
+      const zoom = Math.min(capabilities.zoom.max, Math.max(capabilities.zoom.min, 2));
+      await track.applyConstraints({ advanced: [{ zoom }] });
+    }
+
+    const startWith = async (cameraConfig) => {
+      await barcodeScanner.start(
+        cameraConfig,
+        config,
+        async (decodedText) => {
+          if (!scannerActive) {
+            return;
+          }
+          scannerStatusText.textContent = `Найдено: ${decodedText}`;
+          await handleScannedBarcode(decodedText);
+        },
+        () => {}
+      );
+      scannerActive = true;
+      try {
+        await applyDefaultCameraZoom();
+      } catch (_) {
+        // Some phones do not expose camera zoom controls.
+      }
+      scannerStatusText.textContent = "Наведите камеру на штрихкод.";
+    };
+
+    try {
+      await startWith({ facingMode: { exact: "environment" } });
+    } catch (error) {
+      try {
+        await startWith({ facingMode: "environment" });
+      } catch (fallbackError) {
+        scannerStatusText.textContent = "Не удалось открыть камеру. Разрешите доступ и попробуйте снова.";
+      }
+    }
+  }
+
+  function applySuggestion(product) {
+    if (!product) {
+      return;
+    }
+    cashSearchInput.value = product.nazvanie || "";
+    closeSuggestions();
+  }
+
+  function renderSuggestions(query) {
+    searchSuggestions = getProductSuggestions(query);
+    activeSuggestionIndex = searchSuggestions.length ? 0 : -1;
+
+    if (!searchSuggestions.length) {
+      closeSuggestions();
+      return;
+    }
+
+    cashSearchSuggestions.innerHTML = searchSuggestions.map((product, index) => `
+      <button type="button" class="cash-suggestion-item ${index === activeSuggestionIndex ? "active" : ""}" data-index="${index}">
+        <span class="cash-suggestion-name">${product.nazvanie || ""}</span>
+        <span class="cash-suggestion-meta">Остаток: ${product.kolichestvo ?? 0} • ${(product.barcodes || "без штрихкода")}</span>
+      </button>
+    `).join("");
+
+    cashSearchSuggestions.classList.remove("hidden");
+    cashSearchSuggestions.querySelectorAll(".cash-suggestion-item").forEach((item) => {
+      item.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        const index = Number(item.dataset.index || -1);
+        const product = searchSuggestions[index];
+        if (!product) {
+          return;
+        }
+        addProductToCart(product);
+        cashSearchInput.value = "";
+        cashSearchInput.focus();
+        closeSuggestions();
+      });
+    });
+  }
+
+  function renderBarcodeChoiceSuggestions(barcode, matches) {
+    searchSuggestions = Array.isArray(matches) ? matches : [];
+    activeSuggestionIndex = -1;
+
+    if (!searchSuggestions.length) {
+      closeSuggestions();
+      return;
+    }
+
+    cashSearchSuggestions.innerHTML = searchSuggestions.map((product, index) => `
+      <button type="button" class="cash-suggestion-item" data-index="${index}">
+        <span class="cash-suggestion-name">${product.nazvanie || ""}</span>
+        <span class="cash-suggestion-meta">Barcode: ${barcode} | Stock: ${product.kolichestvo ?? 0} | ${(product.barcodes || "no barcode")}</span>
+      </button>
+    `).join("");
+
+    cashSearchSuggestions.classList.remove("hidden");
+    cashSearchSuggestions.querySelectorAll(".cash-suggestion-item").forEach((item) => {
+      item.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        const index = Number(item.dataset.index || -1);
+        const product = searchSuggestions[index];
+        if (!product) {
+          return;
+        }
+        addProductToCart(product);
+        cashSearchInput.value = "";
+        cashSearchInput.focus();
+        closeSuggestions();
+      });
+    });
+  }
+
+  function refreshSuggestionSelection() {
+    cashSearchSuggestions.querySelectorAll(".cash-suggestion-item").forEach((item, index) => {
+      item.classList.toggle("active", index === activeSuggestionIndex);
+    });
+  }
+
+  function findProduct(query) {
+    const normalized = normalize(query);
+    if (!normalized) {
+      return null;
+    }
+
+    const searchTerms = normalized.split(/\s+/).filter(Boolean);
+    if (searchTerms.length === 1) {
+      const exactBarcodeMatches = getExactBarcodeMatches(normalized);
+      if (exactBarcodeMatches.length === 1) {
+        return exactBarcodeMatches[0];
+      }
+      if (exactBarcodeMatches.length > 1) {
+        return null;
+      }
+      const exactNameMatch = cashProducts.find((product) => normalize(product.nazvanie) === normalized);
+      if (exactNameMatch) {
+        return exactNameMatch;
+      }
+    }
+
+    return cashProducts.find((product) => {
+      const productName = normalize(product.nazvanie);
+      return searchTerms.every((term) => productName.includes(term));
+    }) || null;
+  }
+
+  function updateLineNumbers() {
+    Array.from(cashTableBody.querySelectorAll("tr")).forEach((row, index) => {
+      row.querySelector(".cash-line-number").textContent = index + 1;
+    });
+  }
+
+  function renderCart() {
+    cashTableBody.innerHTML = "";
+    cart.forEach((item) => {
+      const fragment = cashRowTemplate.content.cloneNode(true);
+      const row = fragment.querySelector("tr");
+      row.querySelector(".cash-product-name").textContent = item.nazvanie;
+      row.querySelector(".cash-product-meta").textContent = `Остаток: ${item.kolichestvo} • ${item.barcodes || "без штрихкода"}`;
+      const qtyInput = row.querySelector(".cash-qty-input");
+      const retailPriceInput = row.querySelector(".retail-price-input");
+      const wholesalePriceInput = row.querySelector(".wholesale-price-input");
+      qtyInput.value = item.quantity;
+      retailPriceInput.value = item.tsena_prodazhi;
+      wholesalePriceInput.value = item.tsena_optom;
+      row.querySelector(".retail-sum").textContent = formatMoney(item.quantity * item.tsena_prodazhi);
+      row.querySelector(".wholesale-sum").textContent = formatMoney(item.quantity * item.tsena_optom);
+
+      function syncRowTotals(quantityValue) {
+        row.querySelector(".retail-sum").textContent = formatMoney(quantityValue * Number(item.tsena_prodazhi || 0));
+        row.querySelector(".wholesale-sum").textContent = formatMoney(quantityValue * Number(item.tsena_optom || 0));
+        recalcTotal();
+      }
+
+      function normalizePriceInput(input, key) {
+        const rawValue = input.value.trim();
+        if (!rawValue) {
+          return;
+        }
+        const parsedValue = Number(rawValue);
+        if (!Number.isFinite(parsedValue)) {
+          return;
+        }
+        const nextValue = Math.max(0, Math.floor(parsedValue));
+        item[key] = nextValue;
+        syncRowTotals(Number(item.quantity || 0));
+      }
+
+      function commitPriceInput(input, key) {
+        const parsedValue = Number(input.value || item[key] || 0);
+        const nextValue = Number.isFinite(parsedValue) ? Math.max(0, Math.floor(parsedValue)) : Math.max(0, Number(item[key] || 0));
+        item[key] = nextValue;
+        input.value = nextValue;
+        syncRowTotals(Number(item.quantity || 0));
+      }
+
+      qtyInput.addEventListener("input", () => {
+        const rawValue = qtyInput.value.trim();
+        if (!rawValue) {
+          return;
+        }
+        const parsedValue = Math.floor(Number(rawValue));
+        if (!Number.isFinite(parsedValue)) {
+          return;
+        }
+        const nextValue = Math.max(1, parsedValue);
+        item.quantity = nextValue;
+        syncRowTotals(nextValue);
+      });
+
+      qtyInput.addEventListener("blur", () => {
+        const parsedValue = Math.floor(Number(qtyInput.value || item.quantity || 1));
+        const nextValue = Number.isFinite(parsedValue) ? Math.max(1, parsedValue) : Math.max(1, Number(item.quantity || 1));
+        item.quantity = nextValue;
+        qtyInput.value = nextValue;
+        syncRowTotals(nextValue);
+      });
+
+      retailPriceInput.addEventListener("input", () => {
+        normalizePriceInput(retailPriceInput, "tsena_prodazhi");
+      });
+
+      retailPriceInput.addEventListener("blur", () => {
+        commitPriceInput(retailPriceInput, "tsena_prodazhi");
+      });
+
+      wholesalePriceInput.addEventListener("input", () => {
+        normalizePriceInput(wholesalePriceInput, "tsena_optom");
+      });
+
+      wholesalePriceInput.addEventListener("blur", () => {
+        commitPriceInput(wholesalePriceInput, "tsena_optom");
+      });
+
+      row.querySelector(".remove-row").addEventListener("click", () => {
+        const index = cart.findIndex((cartItem) => cartItem.uuid === item.uuid);
+        if (index >= 0) {
+          cart.splice(index, 1);
+          renderCart();
+        }
+      });
+
+      cashTableBody.appendChild(fragment);
+    });
+
+    updateLineNumbers();
+    syncTableVisibility();
+    toggleEmptyState();
+    recalcTotal();
+  }
+
+  function addProductToCart(product) {
+    const existing = cart.find((item) => item.uuid === product.uuid);
+    if (existing) {
+      existing.quantity += 1;
+      renderCart();
+      return;
+    }
+
+    cart.push({
+      uuid: product.uuid,
+      nazvanie: product.nazvanie,
+      kolichestvo: Number(product.kolichestvo || 0),
+      tsena_zakupki: Number(product.tsena_zakupki || 0),
+      tsena_prodazhi: Number(product.tsena_prodazhi || 0),
+      tsena_optom: Number(product.tsena_optom || 0),
+      quantity: 1,
+      barcodes: product.barcodes || ""
+    });
+    renderCart();
+  }
+
+  function handleSearch() {
+    const query = cashSearchInput.value.trim();
+    if (!query) {
+      cashSearchInput.focus();
+      return;
+    }
+    const exactBarcodeMatches = getExactBarcodeMatches(query);
+    if (exactBarcodeMatches.length > 1) {
+      renderBarcodeChoiceSuggestions(query, exactBarcodeMatches);
+      cashSearchInput.focus();
+      return;
+    }
+    let product = null;
+    if (activeSuggestionIndex >= 0 && searchSuggestions[activeSuggestionIndex]) {
+      product = searchSuggestions[activeSuggestionIndex];
+    } else {
+      product = findProduct(query) || searchSuggestions[0] || null;
+    }
+    if (!product) {
+      window.alert("Товар не найден.");
+      cashSearchInput.select();
+      return;
+    }
+    addProductToCart(product);
+    cashSearchInput.value = "";
+    closeSuggestions();
+    cashSearchInput.focus();
+  }
+
+  function openPaymentModalFn() {
+    if (!cart.length) {
+      window.alert("Добавьте товары в чек.");
+      return;
+    }
+    paymentError.textContent = "";
+    const total = recalcTotal();
+    cashAmountInput.value = total.toFixed(2);
+    cardAmountInput.value = "0";
+    debtAmountInput.value = total.toFixed(2);
+    debtClientInput.value = "";
+    syncPaymentMethodUi();
+    paymentModal.classList.remove("hidden");
+  }
+
+  function closePaymentModalFn() {
+    paymentModal.classList.add("hidden");
+  }
+
+  function syncPaymentMethodUi() {
+    document.querySelectorAll(".payment-method").forEach((button) => {
+      button.classList.toggle("active", button.dataset.method === paymentMethod);
+    });
+
+    document.querySelectorAll("[data-payment-field]").forEach((field) => field.classList.add("hidden"));
+    if (paymentMethod === "cash") {
+      document.querySelector('[data-payment-field="cash"]').classList.remove("hidden");
+      paymentMetaText.textContent = "Сдача посчитается автоматически.";
+    } else if (paymentMethod === "card") {
+      document.querySelector('[data-payment-field="card"]').classList.remove("hidden");
+      paymentMetaText.textContent = "Продажа будет записана как перевод.";
+    } else if (paymentMethod === "debt") {
+      document.querySelector('[data-payment-field="debt"]').classList.remove("hidden");
+      document.querySelector('[data-payment-field="client"]').classList.remove("hidden");
+      paymentMetaText.textContent = "Для долга укажи клиента или комментарий.";
+    } else {
+      document.querySelector('[data-payment-field="cash"]').classList.remove("hidden");
+      document.querySelector('[data-payment-field="card"]').classList.remove("hidden");
+      paymentMetaText.textContent = "Сумма наличных и перевода должна совпасть с итогом чека.";
+    }
+  }
+
+  async function submitSale() {
+    paymentError.textContent = "";
+    confirmPaymentButton.disabled = true;
+
+    const total = recalcTotal();
+    const payload = {
+      sale_mode: saleMode,
+      payment_method: paymentMethod,
+      cash_amount: cashAmountInput.value,
+      card_amount: cardAmountInput.value,
+      debt_amount: debtAmountInput.value,
+      paid_amount: cashAmountInput.value,
+      client_debt: debtClientInput.value,
+      items: cart.map((item) => ({
+        product_uuid: item.uuid,
+        product_name: item.nazvanie,
+        quantity: item.quantity,
+        cost_price: item.tsena_zakupki,
+        retail_price: item.tsena_prodazhi,
+        wholesale_price: item.tsena_optom,
+        stock: item.kolichestvo
+      }))
+    };
+
+    if (paymentMethod === "card") {
+      payload.paid_amount = cardAmountInput.value;
+    }
+    if (paymentMethod === "mixed") {
+      payload.paid_amount = Number(cashAmountInput.value || 0) + Number(cardAmountInput.value || 0);
+    }
+    if (paymentMethod === "debt") {
+      payload.debt_amount = total;
+      payload.paid_amount = 0;
+    }
+
+    try {
+      const response = await fetch("{{ url_for('api_kassa_checkout') }}", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const result = await response.json();
+      if (!result.ok) {
+        paymentError.textContent = result.error || "Не удалось провести продажу.";
+        return;
+      }
+
+      cart.splice(0, cart.length);
+      renderCart();
+      renderRecentChecks(result.recent_checks || []);
+      closePaymentModalFn();
+      showCashToast("Оплата прошла!");
+    } catch (error) {
+      paymentError.textContent = "Не удалось провести продажу. Проверьте соединение.";
+    } finally {
+      confirmPaymentButton.disabled = false;
+    }
+  }
+
+  cashSearchButton?.addEventListener("click", handleSearch);
+  cashSearchInput?.addEventListener("input", () => {
+    renderSuggestions(cashSearchInput.value);
+  });
+  cashSearchInput?.addEventListener("focus", () => {
+    renderSuggestions(cashSearchInput.value);
+  });
+  cashSearchInput?.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowDown" && searchSuggestions.length) {
+      event.preventDefault();
+      activeSuggestionIndex = (activeSuggestionIndex + 1) % searchSuggestions.length;
+      refreshSuggestionSelection();
+      return;
+    }
+    if (event.key === "ArrowUp" && searchSuggestions.length) {
+      event.preventDefault();
+      activeSuggestionIndex = (activeSuggestionIndex - 1 + searchSuggestions.length) % searchSuggestions.length;
+      refreshSuggestionSelection();
+      return;
+    }
+    if (event.key === "Escape") {
+      closeSuggestions();
+      return;
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      handleSearch();
+    }
+  });
+  document.addEventListener("click", (event) => {
+    if (!event.target.closest(".cash-search-box")) {
+      closeSuggestions();
+    }
+  });
+  toggleWholesaleButton?.addEventListener("click", () => {
+    saleMode = saleMode === "retail" ? "wholesale" : "retail";
+    renderCart();
+  });
+  clearCartButton?.addEventListener("click", () => {
+    cart.splice(0, cart.length);
+    renderCart();
+  });
+  openPaymentButton?.addEventListener("click", openPaymentModalFn);
+  openScannerButton?.addEventListener("click", openScannerModalFn);
+  closePaymentModal?.addEventListener("click", closePaymentModalFn);
+  cancelPaymentButton?.addEventListener("click", closePaymentModalFn);
+  closeScannerModal?.addEventListener("click", closeScannerModalFn);
+  cancelScannerButton?.addEventListener("click", closeScannerModalFn);
+  document.querySelectorAll(".payment-method").forEach((button) => {
+    button.addEventListener("click", () => {
+      paymentMethod = button.dataset.method || "cash";
+      syncPaymentMethodUi();
+    });
+  });
+  confirmPaymentButton?.addEventListener("click", submitSale);
+
+  syncTableVisibility();
+  toggleEmptyState();
+  recalcTotal();
+  cashSearchInput?.focus();
+</script>
+{% endblock %}

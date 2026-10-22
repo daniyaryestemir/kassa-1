@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Касса Online{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='print-queue-1') }}">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar" id="appSidebar">
+      <a class="logo" href="{{ url_for('dashboard') }}">
+        <span class="logo-mark">K</span>
+        <div class="sidebar-copy">
+          <strong>Касса Online</strong>
+          <span>Сайт для учета</span>
+        </div>
+      </a>
+      <button type="button" class="mobile-menu-toggle" id="mobileMenuToggle" aria-expanded="false" aria-controls="appMenu">Меню</button>
+      <nav class="menu" id="appMenu">
+        <a class="{{ 'active' if active_page == 'dashboard' else '' }}" href="{{ url_for('dashboard') }}"><span class="menu-icon" aria-hidden="true">Г</span><span class="menu-label">Главная</span></a>
+        <a class="{{ 'active' if active_page == 'postupleniya' else '' }}" href="{{ url_for('postupleniya') }}"><span class="menu-icon" aria-hidden="true">П</span><span class="menu-label">Поступления</span></a>
+        <a class="{{ 'active' if active_page == 'nomenklatura' else '' }}" href="{{ url_for('nomenklatura') }}"><span class="menu-icon" aria-hidden="true">Н</span><span class="menu-label">Номенклатура</span></a>
+        <a class="{{ 'active' if active_page == 'kontragenty' else '' }}" href="{{ url_for('kontragenty') }}"><span class="menu-icon" aria-hidden="true">К</span><span class="menu-label">Контрагенты</span></a>
+        <a class="{{ 'active' if active_page == 'otchety' else '' }}" href="{{ url_for('otchety') }}"><span class="menu-icon" aria-hidden="true">О</span><span class="menu-label">Отчеты</span></a>
+        <a class="{{ 'active' if active_page == 'kassa' else '' }}" href="{{ url_for('kassa') }}"><span class="menu-icon" aria-hidden="true">К</span><span class="menu-label">Касса</span></a>
+        <a class="{{ 'active' if active_page == 'barcode_print_queue' else '' }}" href="{{ url_for('barcode_print_queue') }}"><span class="menu-icon" aria-hidden="true">П</span><span class="menu-label">Очередь печати</span></a>
+      </nav>
+      <div class="sidebar-note">
+        <p class="mono">Печать документов</p>
+        <p>Очередь печати уже доступна из меню и накладной.</p>
+      </div>
+    </aside>
+
+    <main class="content">
+      {% if db_error %}
+      <div class="alert">
+        <strong>База данных временно недоступна.</strong>
+        <span>{{ db_error }}</span>
+      </div>
+      {% endif %}
+
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+  <script>
+    (() => {
+      const sidebar = document.getElementById("appSidebar");
+      const toggle = document.getElementById("mobileMenuToggle");
+      const menu = document.getElementById("appMenu");
+      if (!sidebar || !toggle || !menu) {
+        return;
+      }
+
+      const syncState = (open) => {
+        sidebar.classList.toggle("mobile-open", open);
+        toggle.setAttribute("aria-expanded", open ? "true" : "false");
+      };
+
+      toggle.addEventListener("click", () => {
+        syncState(!sidebar.classList.contains("mobile-open"));
+      });
+
+      menu.querySelectorAll("a").forEach((link) => {
+        link.addEventListener("click", () => {
+          if (window.innerWidth <= 760) {
+            syncState(false);
+          }
+        });
+      });
+    })();
+  </script>
+</body>
+</html>

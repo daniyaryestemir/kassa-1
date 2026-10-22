@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% block title %}Очередь печати | Касса Online{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">Печать штрихкодов</p>
+    <h1>{{ 'Товары из накладной' if from_receipt else 'Очередь печати' }}</h1>
+  </div>
+  <a class="ghost-link" href="{{ url_for('postupleniya') }}">К накладным</a>
+</section>
+
+{% if form_error %}
+<div class="alert">
+  <strong>Не удалось передать товары в очередь.</strong>
+  <span>{{ form_error }}</span>
+</div>
+{% endif %}
+
+{% if queued %}
+<section class="success-box">
+  <strong>Товары переданы в очередь печати.</strong>
+</section>
+{% endif %}
+
+{% if from_receipt %}
+<section class="panel print-queue-panel">
+  <form method="post" class="print-queue-form">
+    <div class="print-queue-toolbar">
+      <label class="queue-option">
+        <input type="checkbox" name="print_name" value="1" {% if print_name_checked %}checked{% endif %}>
+        <span>Печать названия</span>
+      </label>
+      <label class="queue-option">
+        <input type="checkbox" name="print_price" value="1" {% if print_price_checked %}checked{% endif %}>
+        <span>Печать цены</span>
+      </label>
+      <button type="submit" class="secondary-button">Передать в очередь</button>
+    </div>
+
+    <div class="table-wrap">
+      <table class="print-queue-table">
+        <thead>
+          <tr>
+            <th>Товар</th>
+            <th>Штрихкод</th>
+            <th>Цена</th>
+            {% if not from_receipt %}
+            <th>Дата передачи</th>
+            <th>Состояние</th>
+            {% endif %}
+            <th>Кол-во</th>
+            <th>✓</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for product in products %}
+          {% set row_id = product.entry_id if from_receipt else product.uuid %}
+          {% set barcode_value = product.barcode if from_receipt else product.primary_barcode %}
+          <tr class="{{ 'queue-row-disabled' if not barcode_value else '' }}">
+            <td>
+              <div class="queue-product-name">{{ product.nazvanie }}</div>
+              <div class="queue-product-meta">Остаток: {{ product.kolichestvo }}</div>
+            </td>
+            <td class="mono">{{ barcode_value or 'Нет штрихкода' }}</td>
+            <td>{{ product.tsena_prodazhi|money }} ₸</td>
+            {% if not from_receipt %}
+            <td>{{ product.queue_created_at|dt if product.queue_created_at else '-' }}</td>
+            <td>
+              {% set status = product.queue_status or '' %}
+              <span class="queue-status-badge {{ status or 'empty' }}">
+                {% if status == 'printed' %}
+                Напечатано
+                {% elif status == 'processing' %}
+                Печатается
+                {% elif status == 'error' %}
+                Ошибка
+                {% elif status == 'queue' %}
+                Очередь
+                {% else %}
+                -
+                {% endif %}
+              </span>
+            </td>
+            {% endif %}
+            <td>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                name="copies_{{ row_id }}"
+                value="{{ product.queue_copies or 1 }}"
+                class="queue-copies-input"
+                {% if not barcode_value %}disabled{% endif %}
+              >
+            </td>
+            <td>
+              <input
+                type="checkbox"
+                name="selected_products"
+                value="{{ row_id }}"
+                {% if product.selected %}checked{% endif %}
+                {% if not barcode_value %}disabled{% endif %}
+              >
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="{{ 5 if from_receipt else 7 }}" class="empty">Товары для печати пока не найдены.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </form>
+</section>
+{% endif %}
+
+{% if not from_receipt %}
+<section class="panel print-queue-history-panel">
+  <div class="panel-head">
+    <h2>Последние задания очереди</h2>
+  </div>
+  <div class="print-queue-group-list">
+    {% for group in queue_groups %}
+    <section class="print-queue-group">
+      <div class="print-queue-group-head">
+        <div>
+          <strong>Задание от {{ group.created_at|dt }}</strong>
+          <span class="queue-group-meta">{{ group.items_count }} тов. · {{ group.total_copies }} шт.</span>
+        </div>
+        <span class="queue-status-badge {{ group.status or 'empty' }}">
+          {% if group.status == 'printed' %}
+          Напечатано
+          {% elif group.status == 'processing' %}
+          Печатается
+          {% elif group.status == 'error' %}
+          Ошибка
+          {% elif group.status == 'queue' %}
+          Очередь
+          {% else %}
+          -
+          {% endif %}
+        </span>
+      </div>
+      <div class="table-wrap">
+        <table class="print-queue-history-table">
+          <thead>
+            <tr>
+              <th>Товар</th>
+              <th>Штрихкод</th>
+              <th>Кол-во</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in group["items"] %}
+            <tr>
+              <td>{{ row.product_name }}</td>
+              <td class="mono">{{ row.barcode }}</td>
+              <td>{{ row.copies }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+    {% else %}
+    <div class="empty">Очередь печати пока пустая.</div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}

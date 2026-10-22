@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+{% block title %}{{ form_title }} | Касса Online{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">Номенклатура</p>
+    <h1>{{ form_title }}</h1>
+  </div>
+  <div class="action-row">
+    <a class="secondary-button link-button" href="{{ url_for('nomenklatura') }}">К списку</a>
+  </div>
+</section>
+
+{% if created %}
+<div class="success-box">
+  <strong>Товар успешно создан.</strong>
+</div>
+{% endif %}
+
+{% if updated %}
+<div class="success-box">
+  <strong>Товар успешно обновлен.</strong>
+</div>
+{% endif %}
+
+{% if form_error %}
+<div class="alert">
+  <strong>Не удалось сохранить товар.</strong>
+  <span>{{ form_error }}</span>
+</div>
+{% endif %}
+
+<section class="product-editor">
+  <form method="post" class="product-editor-form">
+    <section class="panel product-main-card">
+      <div class="panel-head">
+        <div>
+          <h2>Карточка товара</h2>
+          <p class="product-subtitle">Редактирование почти в том же духе, что и в десктопной кассе.</p>
+        </div>
+        {% if form_data.uuid %}
+        <span class="mono small">{{ form_data.uuid }}</span>
+        {% endif %}
+      </div>
+
+      <div class="product-edit-grid">
+        <label class="product-field product-field-wide">
+          <span>Название</span>
+          <input type="text" name="nazvanie" value="{{ form_data.nazvanie or '' }}" required>
+        </label>
+        <label class="product-field">
+          <span>Остаток</span>
+          <input type="number" step="1" min="0" name="kolichestvo" value="{{ form_data.kolichestvo or '' }}">
+        </label>
+        <label class="product-field">
+          <span>Цена продажи</span>
+          <input type="number" step="0.01" min="0" name="tsena_prodazhi" value="{{ form_data.tsena_prodazhi or '' }}">
+        </label>
+        <label class="product-field">
+          <span>Цена оптом</span>
+          <input type="number" step="0.01" min="0" name="tsena_optom" value="{{ form_data.tsena_optom or '' }}">
+        </label>
+        <label class="product-field">
+          <span>Цена закупки</span>
+          <input type="number" step="0.01" min="0" name="tsena_zakupki" value="{{ form_data.tsena_zakupki or '' }}">
+        </label>
+      </div>
+
+      <div class="product-action-strip">
+        <button type="submit">{{ submit_label }}</button>
+        {% if form_data.uuid %}
+        <button
+          type="submit"
+          class="danger-button"
+          formaction="{{ url_for('nomenklatura_delete', product_uuid=form_data.uuid) }}"
+          formmethod="post"
+          onclick="return confirm('Удалить этот товар?');"
+        >
+          Удалить товар
+        </button>
+        {% endif %}
+      </div>
+    </section>
+
+    <aside class="panel product-side-card">
+      <div class="panel-head">
+        <div>
+          <h2>Штрихкоды</h2>
+          <p class="product-subtitle">Можно добавить вручную или сгенерировать автоматически.</p>
+        </div>
+      </div>
+
+      <div class="barcode-toolbar">
+        <button type="button" class="secondary-button" id="addBarcodeRowButton">Добавить штрихкод</button>
+        <button type="button" class="secondary-button" id="generateBarcodeButton">Сгенерировать штрихкод</button>
+      </div>
+
+      <div class="barcode-list" id="barcodeList">
+        {% if form_data.barcode_rows %}
+          {% for barcode in form_data.barcode_rows %}
+          <div class="barcode-row">
+            <input type="hidden" name="barcode_uuid" value="{{ barcode.uuid or '' }}">
+            <input type="text" name="barcodes" value="{{ barcode.shtrih_kod or '' }}" placeholder="Штрихкод">
+            <button type="button" class="remove-barcode">Удалить</button>
+          </div>
+          {% endfor %}
+        {% else %}
+          <div class="barcode-row">
+            <input type="hidden" name="barcode_uuid" value="">
+            <input type="text" name="barcodes" value="" placeholder="Штрихкод">
+            <button type="button" class="remove-barcode">Удалить</button>
+          </div>
+        {% endif %}
+      </div>
+
+      <template id="barcodeRowTemplate">
+        <div class="barcode-row">
+          <input type="hidden" name="barcode_uuid" value="">
+          <input type="text" name="barcodes" value="" placeholder="Штрихкод">
+          <button type="button" class="remove-barcode">Удалить</button>
+        </div>
+      </template>
+
+      <div class="barcode-note">
+        <strong>Подсказка</strong>
+        <span>Если штрихкод пустой, он не сохранится. Дубли система не пропустит.</span>
+      </div>
+    </aside>
+  </form>
+</section>
+
+<script>
+  (() => {
+    const barcodeList = document.getElementById("barcodeList");
+    const rowTemplate = document.getElementById("barcodeRowTemplate");
+    const addBarcodeRowButton = document.getElementById("addBarcodeRowButton");
+    const generateBarcodeButton = document.getElementById("generateBarcodeButton");
+
+    if (!barcodeList || !rowTemplate) {
+      return;
+    }
+
+    const bindRow = (row) => {
+      const removeButton = row.querySelector(".remove-barcode");
+      removeButton?.addEventListener("click", () => {
+        const rows = barcodeList.querySelectorAll(".barcode-row");
+        if (rows.length > 1) {
+          row.remove();
+        } else {
+          row.querySelectorAll("input").forEach((input) => {
+            input.value = "";
+          });
+        }
+      });
+    };
+
+    const addEmptyRow = () => {
+      const fragment = rowTemplate.content.cloneNode(true);
+      const row = fragment.querySelector(".barcode-row");
+      bindRow(row);
+      barcodeList.appendChild(fragment);
+      return barcodeList.querySelector(".barcode-row:last-child");
+    };
+
+    addBarcodeRowButton?.addEventListener("click", () => {
+      const row = addEmptyRow();
+      row?.querySelector('input[name="barcodes"]')?.focus();
+    });
+
+    generateBarcodeButton?.addEventListener("click", async () => {
+      generateBarcodeButton.disabled = true;
+      try {
+        const response = await fetch("{{ url_for('api_products_next_barcode') }}");
+        const result = await response.json();
+        if (!result.ok) {
+          window.alert(result.error || "Не удалось сгенерировать штрихкод.");
+          return;
+        }
+
+        const rows = Array.from(barcodeList.querySelectorAll(".barcode-row"));
+        let targetRow = rows.find((row) => !(row.querySelector('input[name="barcodes"]')?.value || "").trim());
+        if (!targetRow) {
+          targetRow = addEmptyRow();
+        }
+        const input = targetRow?.querySelector('input[name="barcodes"]');
+        if (input) {
+          input.value = result.barcode;
+          input.focus();
+        }
+      } catch (error) {
+        window.alert("Не удалось сгенерировать штрихкод.");
+      } finally {
+        generateBarcodeButton.disabled = false;
+      }
+    });
+
+    barcodeList.querySelectorAll(".barcode-row").forEach(bindRow);
+  })();
+</script>
+{% endblock %}

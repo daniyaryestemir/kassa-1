@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+*.log
+*.err.log
+.venv/
+venv/
+env/
+deploy/
+резерв/
+*.rar
+
+# Local database credentials. Keep mysql_config.example.json in the project.
+mysql_config.json

@@ -1,0 +1,6 @@
+PassengerEnabled On
+PassengerPython /usr/bin/python3
+
+<FilesMatch "\.(py|json|md|ps1|log|rar|zip)$">
+    Require all denied
+</FilesMatch>

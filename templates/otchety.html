@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}Отчеты | Касса Online{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">Продажи</p>
+    <h1>Отчет по продажам</h1>
+  </div>
+</section>
+
+<section class="toolbar">
+  <form class="search-form" method="get">
+    <input type="date" name="date_from" value="{{ date_from }}">
+    <input type="date" name="date_to" value="{{ date_to }}">
+    <button type="submit">Сформировать</button>
+    <span class="report-counter">Чеков в отчете: {{ reports['summary'].receipts_count or 0 }}</span>
+  </form>
+</section>
+
+<section class="report-stat-row report-stat-row-main">
+  <article class="stat">
+    <span>Общая себестоимость</span>
+    <strong>{{ reports['summary'].total_cost_sum|money }} ₸</strong>
+  </article>
+  <article class="stat">
+    <span>Общая цена продажи</span>
+    <strong>{{ reports['summary'].total_sale_sum|money }} ₸</strong>
+  </article>
+  <article class="stat accent">
+    <span>Общая прибыль</span>
+    <strong>{{ reports['summary'].total_profit_sum|money }} ₸</strong>
+  </article>
+</section>
+
+<section class="report-stat-row report-stat-row-payments">
+  <article class="stat">
+    <span>Переводом</span>
+    <strong>{{ reports['payments'].card_total|money }} ₸</strong>
+  </article>
+  <article class="stat">
+    <span>Наличные</span>
+    <strong>{{ reports['payments'].cash_total|money }} ₸</strong>
+  </article>
+  <article class="stat">
+    <span>В долг</span>
+    <strong>{{ reports['payments'].debt_total|money }} ₸</strong>
+  </article>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>Продажи по товарам</h2>
+    <span class="mono">{{ reports['items']|length }} позиций</span>
+  </div>
+  <div class="table-wrap">
+    <table id="reportItemsTable">
+      <thead>
+        <tr>
+          <th><button type="button" class="sort-button" data-type="text">Название</button></th>
+          <th><button type="button" class="sort-button" data-type="number">Кол-во</button></th>
+          <th><button type="button" class="sort-button" data-type="number">Себестоимость</button></th>
+          <th><button type="button" class="sort-button" data-type="number">Общая себестоимость</button></th>
+          <th><button type="button" class="sort-button" data-type="number">Цена продажи средн.</button></th>
+          <th><button type="button" class="sort-button" data-type="number">Общая цена продажи</button></th>
+          <th><button type="button" class="sort-button" data-type="number">Прибыль средн.</button></th>
+          <th><button type="button" class="sort-button" data-type="number">Прибыль</button></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in reports['items'] %}
+        <tr>
+          <td>{{ item.name }}</td>
+          <td>{{ item.quantity|round(0)|int }} шт</td>
+          <td>{{ item.avg_cost|money }} ₸</td>
+          <td>{{ item.cost_sum|money }} ₸</td>
+          <td>{{ item.avg_sale|money }} ₸</td>
+          <td>{{ item.sale_sum|money }} ₸</td>
+          <td>{{ item.avg_profit|money }} ₸</td>
+          <td>{{ item.total_profit|money }} ₸</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="8" class="empty">За выбранный период продаж пока нет.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+<script>
+  (() => {
+    const table = document.getElementById("reportItemsTable");
+    if (!table) {
+      return;
+    }
+
+    const parseNumber = (text) => {
+      const normalized = (text || "").replace(/[^0-9,.-]/g, "").replace(",", ".");
+      const value = Number(normalized);
+      return Number.isFinite(value) ? value : 0;
+    };
+
+    const getCellValue = (row, index, type) => {
+      const cellText = row.children[index]?.textContent?.trim() || "";
+      return type === "number" ? parseNumber(cellText) : cellText.toLowerCase();
+    };
+
+    table.querySelectorAll("thead .sort-button").forEach((button, index) => {
+      button.addEventListener("click", () => {
+        const tbody = table.querySelector("tbody");
+        const rows = Array.from(tbody.querySelectorAll("tr")).filter((row) => !row.querySelector(".empty"));
+        const currentDirection = button.dataset.direction === "asc" ? "desc" : "asc";
+        const type = button.dataset.type || "text";
+
+        table.querySelectorAll("thead .sort-button").forEach((item) => {
+          if (item !== button) {
+            item.dataset.direction = "";
+          }
+        });
+
+        rows.sort((a, b) => {
+          const first = getCellValue(a, index, type);
+          const second = getCellValue(b, index, type);
+          if (first < second) {
+            return currentDirection === "asc" ? -1 : 1;
+          }
+          if (first > second) {
+            return currentDirection === "asc" ? 1 : -1;
+          }
+          return 0;
+        });
+
+        button.dataset.direction = currentDirection;
+        tbody.append(...rows);
+      });
+    });
+  })();
+</script>
+{% endblock %}

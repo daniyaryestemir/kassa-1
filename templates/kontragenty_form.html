@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}{{ form_title }} | Касса Online{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">Контрагенты</p>
+    <h1>{{ form_title }}</h1>
+  </div>
+  <div class="action-row">
+    <a class="secondary-button link-button" href="{{ url_for('kontragenty') }}">К списку</a>
+    {% if form_data.uuid %}
+    <form method="post" action="{{ url_for('kontragenty_delete', supplier_uuid=form_data.uuid) }}" onsubmit="return confirm('Удалить этого контрагента?');">
+      <button type="submit" class="danger-button">Удалить</button>
+    </form>
+    {% endif %}
+  </div>
+</section>
+
+{% if created %}
+<div class="success-box">
+  <strong>Контрагент успешно создан.</strong>
+</div>
+{% endif %}
+
+{% if updated %}
+<div class="success-box">
+  <strong>Контрагент успешно обновлен.</strong>
+</div>
+{% endif %}
+
+{% if form_error %}
+<div class="alert">
+  <strong>Не удалось сохранить контрагента.</strong>
+  <span>{{ form_error }}</span>
+</div>
+{% endif %}
+
+<section class="panel">
+  <form method="post" class="receipt-form">
+    <div class="form-grid">
+      <label>
+        <span>Название контрагента</span>
+        <input type="text" name="name" value="{{ form_data.name or '' }}" required>
+      </label>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit">{{ submit_label }}</button>
+    </div>
+  </form>
+</section>
+{% endblock %}

@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+{% block title %}Главная | Касса Online{% endblock %}
+{% block content %}
+{% set summary = dashboard.period_summary or {} %}
+{% set stats = dashboard.stats or {} %}
+
+<section class="dashboard-head">
+  <div>
+    <p class="eyebrow">Рабочая панель</p>
+    <h1>Главная статистика кассы</h1>
+    <p class="hero-text">Продажи, прибыль, остатки и лучшие товары за последние 30 дней.</p>
+  </div>
+  <div class="dashboard-actions">
+    <a class="ghost-link" href="{{ url_for('otchety') }}">Открыть отчеты</a>
+    <a class="ghost-link" href="{{ url_for('kassa') }}">Перейти в кассу</a>
+  </div>
+</section>
+
+<section class="dashboard-kpi-grid">
+  <article class="stat accent">
+    <span>Сегодня продажи</span>
+    <strong>{{ summary.today_sales_total|money }} ₸</strong>
+    <small>{{ summary.today_checks_count or 0 }} чеков</small>
+  </article>
+  <article class="stat">
+    <span>Продажи за 30 дней</span>
+    <strong>{{ summary.sales_total|money }} ₸</strong>
+    <small>Средний чек: {{ summary.avg_check|money }} ₸</small>
+  </article>
+  <article class="stat">
+    <span>Прибыль за 30 дней</span>
+    <strong>{{ summary.profit_total|money }} ₸</strong>
+    <small>Сегодня: {{ summary.today_profit_total|money }} ₸</small>
+  </article>
+  <article class="stat">
+    <span>Товаров продано</span>
+    <strong>{{ summary.items_quantity|round(0)|int }}</strong>
+    <small>{{ summary.checks_count or 0 }} чеков за период</small>
+  </article>
+  <article class="stat">
+    <span>Товаров в базе</span>
+    <strong>{{ stats.total_products or 0 }}</strong>
+    <small>Мало остатка: {{ stats.low_stock_count or 0 }}</small>
+  </article>
+  <article class="stat">
+    <span>Стоимость склада</span>
+    <strong>{{ stats.stock_cost_sum|money }} ₸</strong>
+    <small>По продаже: {{ stats.stock_retail_sum|money }} ₸</small>
+  </article>
+</section>
+
+<section class="dashboard-main-grid">
+  <article class="panel dashboard-chart-panel">
+    <div class="panel-head">
+      <h2>Динамика продаж</h2>
+      <span class="mono">30 дней</span>
+    </div>
+    <div class="sales-chart" aria-label="График продаж за 30 дней">
+      {% for point in dashboard.sales_chart %}
+      <div class="sales-bar" title="{{ point.label }}: {{ point.sales|money }} ₸">
+        <div class="sales-bar-fill" style="height: {{ point.height }}%"></div>
+        <span>{{ point.label }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </article>
+
+  <article class="panel">
+    <div class="panel-head">
+      <h2>Оплата</h2>
+      <span class="mono">30 дней</span>
+    </div>
+    <div class="payment-mix">
+      {% for item in dashboard.payment_mix %}
+      <div class="payment-row">
+        <div>
+          <strong>{{ item.label }}</strong>
+          <span>{{ item.value|money }} ₸</span>
+        </div>
+        <div class="payment-track">
+          <div style="width: {{ item.share }}%"></div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </article>
+</section>
+
+<section class="dashboard-top-grid">
+  <article class="panel">
+    <div class="panel-head">
+      <h2>Продаваемые товары</h2>
+      <span class="mono">количество</span>
+    </div>
+    <div class="rank-list">
+      {% for item in dashboard.top_sold_products %}
+      <div class="rank-row">
+        <span>{{ loop.index }}</span>
+        <strong>{{ item.name }}</strong>
+        <b>{{ item.quantity|round(0)|int }} шт</b>
+      </div>
+      {% else %}
+      <p class="empty">Продаж за последние 30 дней пока нет.</p>
+      {% endfor %}
+    </div>
+  </article>
+
+  <article class="panel">
+    <div class="panel-head">
+      <h2>Лучшие по выручке</h2>
+      <span class="mono">₸</span>
+    </div>
+    <div class="rank-list">
+      {% for item in dashboard.top_revenue_products %}
+      <div class="rank-row">
+        <span>{{ loop.index }}</span>
+        <strong>{{ item.name }}</strong>
+        <b>{{ item.revenue|money }} ₸</b>
+      </div>
+      {% else %}
+      <p class="empty">Выручки за период пока нет.</p>
+      {% endfor %}
+    </div>
+  </article>
+
+  <article class="panel">
+    <div class="panel-head">
+      <h2>Лучшие по прибыли</h2>
+      <span class="mono">маржа</span>
+    </div>
+    <div class="rank-list">
+      {% for item in dashboard.top_profit_products %}
+      <div class="rank-row">
+        <span>{{ loop.index }}</span>
+        <strong>{{ item.name }}</strong>
+        <b>{{ item.profit|money }} ₸</b>
+      </div>
+      {% else %}
+      <p class="empty">Прибыли за период пока нет.</p>
+      {% endfor %}
+    </div>
+  </article>
+</section>
+
+<section class="panel-grid dashboard-bottom-grid">
+  <article class="panel">
+    <div class="panel-head">
+      <h2>Последние поступления</h2>
+      <a href="{{ url_for('postupleniya') }}">Открыть все</a>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Контрагент</th>
+            <th>Дата</th>
+            <th>Закупка</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in dashboard.recent_receipts %}
+          <tr>
+            <td>{{ item.kontragent }}</td>
+            <td>{{ item.data|dt }}</td>
+            <td>{{ item.summa_postupleni|money }} ₸</td>
+            <td><a href="{{ url_for('postuplenie_edit', receipt_uuid=item.uuid) }}">Редактировать</a></td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="4" class="empty">Поступления пока не найдены.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </article>
+
+  <article class="panel">
+    <div class="panel-head">
+      <h2>Минимальные остатки</h2>
+      <a href="{{ url_for('nomenklatura') }}">К номенклатуре</a>
+    </div>
+    <div class="mini-list">
+      {% for item in dashboard.top_products %}
+      <div class="mini-row">
+        <div>
+          <strong>{{ item.nazvanie }}</strong>
+          <span>{{ item.tsena_prodazhi|money }} ₸ продажа</span>
+        </div>
+        <b class="{{ 'danger' if item.kolichestvo <= 5 else '' }}">{{ item.kolichestvo }}</b>
+      </div>
+      {% else %}
+      <p class="empty">Товары пока не найдены.</p>
+      {% endfor %}
+    </div>
+  </article>
+</section>
+{% endblock %}

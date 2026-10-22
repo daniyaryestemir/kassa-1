@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Накладная | Касса Online{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">Детали поступления</p>
+    <h1>Накладная №{{ receipt.id if receipt else '' }}</h1>
+  </div>
+  <div class="action-row">
+    <a class="secondary-button link-button" href="{{ url_for('postupleniya') }}">Назад к списку</a>
+    <a class="ghost-link" href="{{ url_for('postuplenie_edit', receipt_uuid=receipt.uuid) }}">Редактировать</a>
+    <form method="post" action="{{ url_for('postuplenie_delete', receipt_uuid=receipt.uuid) }}" onsubmit="return confirm('Удалить это поступление?');">
+      <button type="submit" class="danger-button">Удалить</button>
+    </form>
+  </div>
+</section>
+
+{% if created %}
+<div class="success-box">
+  <strong>Поступление успешно сохранено.</strong>
+</div>
+{% endif %}
+
+{% if updated %}
+<div class="success-box">
+  <strong>Поступление успешно обновлено.</strong>
+</div>
+{% endif %}
+
+{% if receipt %}
+<section class="detail-grid">
+  <article class="panel">
+    <div class="meta-list">
+      <div><span>Номер</span><strong>{{ receipt.id }}</strong></div>
+      <div><span>Контрагент</span><strong>{{ receipt.kontragent }}</strong></div>
+      <div><span>Дата</span><strong>{{ receipt.data|dt }}</strong></div>
+      <div><span>Закупка</span><strong>{{ receipt.summa_postupleni|money }} ₸</strong></div>
+      <div><span>Опт</span><strong>{{ receipt.summa_optom|money }} ₸</strong></div>
+      <div><span>Продажа</span><strong>{{ receipt.summa_prodazhi|money }} ₸</strong></div>
+      <div><span>UUID</span><strong class="mono small">{{ receipt.uuid }}</strong></div>
+    </div>
+  </article>
+
+  <article class="panel">
+    <div class="panel-head">
+      <h2>Товары в накладной</h2>
+      <span class="mono">{{ receipt["items"]|length }} позиций</span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>№</th>
+            <th>Название</th>
+            <th>Количество</th>
+            <th>Закупка</th>
+            <th>Опт</th>
+            <th>Продажа</th>
+            <th>Сумма закупки</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in receipt["items"] %}
+          <tr>
+            <td>{{ loop.index }}</td>
+            <td>{{ item.nazvanie }}</td>
+            <td>{{ item.kolichestvo }}</td>
+            <td>{{ item.tsena_zakupki|money }} ₸</td>
+            <td>{{ item.tsena_optom|money }} ₸</td>
+            <td>{{ item.tsena_prodazhi|money }} ₸</td>
+            <td>{{ item.summa_zakupki|money }} ₸</td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="7" class="empty">В этой накладной пока нет строк.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </article>
+</section>
+{% endif %}
+{% endblock %}

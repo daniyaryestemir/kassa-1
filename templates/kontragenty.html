@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Контрагенты | Касса Online{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">Поставщики</p>
+    <h1>Контрагенты</h1>
+  </div>
+</section>
+
+<section class="toolbar">
+  <div></div>
+  <a class="ghost-link" href="{{ url_for('kontragenty_new') }}">Новый контрагент</a>
+</section>
+
+{% if deleted %}
+<div class="success-box">
+  <strong>Контрагент успешно удален.</strong>
+</div>
+{% endif %}
+
+{% if delete_error %}
+<div class="alert">
+  <strong>Не удалось удалить контрагента.</strong>
+  <span>{{ delete_error }}</span>
+</div>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>Список контрагентов</h2>
+    <span class="mono">{{ suppliers|length }} записей</span>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Название</th>
+          <th>Последнее изменение</th>
+          <th>UUID</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in suppliers %}
+        <tr>
+          <td>{{ item.name }}</td>
+          <td>{{ item.last_modified|dt }}</td>
+          <td class="mono small">{{ item.uuid }}</td>
+          <td><a href="{{ url_for('kontragenty_edit', supplier_uuid=item.uuid) }}">Изменить</a></td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="4" class="empty">Контрагенты не найдены.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

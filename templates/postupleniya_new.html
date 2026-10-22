@@ -1,0 +1,1185 @@
+{% extends "base.html" %}
+{% block title %}Новое поступление | Касса Online{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">Новая накладная</p>
+    <h1>Создать поступление</h1>
+  </div>
+  <a class="ghost-link" href="{{ url_for('postupleniya') }}">К списку поступлений</a>
+</section>
+
+{% if form_error %}
+<div class="alert">
+  <strong>Не удалось сохранить поступление.</strong>
+  <span>{{ form_error }}</span>
+</div>
+{% endif %}
+
+<section class="panel receipt-desktop-panel">
+  <form method="post" id="receiptForm" class="receipt-form">
+    <input type="hidden" name="autosave_receipt_uuid" id="autosaveReceiptUuid" value="{{ autosave_receipt_uuid or '' }}">
+    <div class="receipt-topbar">
+      <label class="receipt-kontragent-field">
+        <span>Контрагент</span>
+        <div class="inline-field">
+          <select name="kontragent" id="kontragentSelect" required>
+            <option value="">Выберите контрагента</option>
+            {% for supplier in suppliers %}
+            <option value="{{ supplier.name }}" {% if form_data.kontragent == supplier.name %}selected{% endif %}>{{ supplier.name }}</option>
+            {% endfor %}
+          </select>
+          <button type="button" class="secondary-button" id="addSupplierButton">Добавить контрагента</button>
+        </div>
+      </label>
+    </div>
+
+    <div class="receipt-command-row">
+      <button type="button" class="secondary-button" id="addFromBaseButton">Добавить из базы</button>
+      <button type="button" class="secondary-button" id="addNewProductButton">Создать новый товар</button>
+      <button type="button" class="secondary-button" id="addBarcodeButton">Добавить по штрихкоду</button>
+      <button type="button" class="secondary-button" id="openPrintQueueButton">Печать штрихкодов</button>
+      <button type="submit" id="saveReceiptButton" class="secondary-button">Сохранить накладную</button>
+      <span class="mono" id="autosaveStatus"></span>
+    </div>
+
+    <div class="table-wrap receipt-table-wrap">
+      <table id="receiptTable" class="receipt-desktop-table">
+        <thead>
+          <tr>
+            <th>Наименование</th>
+            <th>Количество</th>
+            <th>Цена закупки</th>
+            <th>Оптовая цена</th>
+            <th>Цена продажи</th>
+            <th>Наценка опт %</th>
+            <th>Наценка продажа %</th>
+            <th>Сумма закупки</th>
+            <th>Сумма оптом</th>
+            <th>Сумма продажи</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="receiptBody">
+          {% for row in form_data.rows %}
+          <tr>
+            <td class="receipt-product-cell">
+              <input type="hidden" name="product_uuid" value="{{ row.product_uuid }}">
+              <input type="hidden" name="nazvanie" value="{{ row.nazvanie }}">
+              <div class="receipt-product-main">{{ row.nazvanie }}</div>
+              <div class="product-status"></div>
+            </td>
+            <td><input type="number" step="1" min="1" name="kolichestvo" value="{{ row.kolichestvo }}" required></td>
+            <td><input type="number" step="1" min="0" name="tsena_zakupki" value="{{ row.tsena_zakupki }}"></td>
+            <td><input type="number" step="1" min="0" name="tsena_optom" value="{{ row.tsena_optom }}"></td>
+            <td><input type="number" step="1" min="0" name="tsena_prodazhi" value="{{ row.tsena_prodazhi }}"></td>
+            <td><span class="calc-badge calc-opt-percent">0%</span></td>
+            <td><span class="calc-badge calc-sale-percent">0%</span></td>
+            <td><span class="calc-badge calc-purchase-sum">0</span></td>
+            <td><span class="calc-badge calc-wholesale-sum">0</span></td>
+            <td><span class="calc-badge calc-retail-sum">0</span></td>
+            <td><button type="button" class="remove-row">Удалить</button></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="receipt-summary-row">
+      <div class="receipt-summary-card inline">
+        <span>Итого закупка</span>
+        <strong id="purchaseTotal">0 ₸</strong>
+      </div>
+      <div class="receipt-summary-card inline">
+        <span>Итого оптом</span>
+        <strong id="wholesaleTotal">0 ₸</strong>
+      </div>
+      <div class="receipt-summary-card accent inline">
+        <span>Итого продажа</span>
+        <strong id="retailTotal">0 ₸</strong>
+      </div>
+    </div>
+  </form>
+</section>
+
+<div class="modal-backdrop hidden" id="productPickerModal">
+  <div class="modal-card receipt-picker-card">
+    <div class="panel-head">
+      <h2>Номенклатура</h2>
+      <button type="button" class="icon-button" id="closeProductPickerModal">×</button>
+    </div>
+    <div class="receipt-picker-toolbar">
+      <input type="text" id="productPickerSearch" placeholder="Поиск по названию или штрихкоду" autocomplete="off">
+      <span class="mono" id="productPickerCount"></span>
+    </div>
+    <div class="table-wrap receipt-picker-wrap">
+      <table class="receipt-picker-table">
+        <thead>
+          <tr>
+            <th>Название</th>
+            <th>Остаток</th>
+            <th>Закупка</th>
+            <th>Опт</th>
+            <th>Продажа</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="productPickerBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop hidden" id="pickerEditModal">
+  <div class="modal-card">
+    <div class="panel-head">
+      <h2>Редактировать товар</h2>
+      <button type="button" class="icon-button" id="closePickerEditModal">×</button>
+    </div>
+    <div class="product-form-grid">
+      <label><span>Название</span><input type="text" id="pickerEditNazvanie"></label>
+      <label><span>Закупка</span><input type="number" step="1" min="0" id="pickerEditZakupka"></label>
+      <label><span>Опт</span><input type="number" step="1" min="0" id="pickerEditOptom"></label>
+      <label><span>Продажа</span><input type="number" step="1" min="0" id="pickerEditProdazha"></label>
+    </div>
+    <div class="barcode-toolbar">
+      <button type="button" class="secondary-button" id="pickerEditAddBarcodeButton">Добавить штрихкод</button>
+      <button type="button" class="secondary-button" id="pickerEditGenerateBarcodeButton">Сгенерировать штрихкод</button>
+    </div>
+    <div class="barcode-list" id="pickerEditBarcodeList"></div>
+    <template id="pickerEditBarcodeRowTemplate">
+      <div class="barcode-row">
+        <input type="hidden" data-role="barcode-uuid" value="">
+        <input type="text" data-role="barcode-value" value="" placeholder="Штрихкод">
+        <button type="button" class="remove-barcode">Удалить</button>
+      </div>
+    </template>
+    <div class="modal-error" id="pickerEditError"></div>
+    <div class="form-actions">
+      <button type="button" class="secondary-button" id="cancelPickerEdit">Отмена</button>
+      <button type="button" id="savePickerEdit">Сохранить изменения</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop hidden" id="quickProductModal">
+  <div class="modal-card">
+    <div class="panel-head">
+      <h2>Новый товар</h2>
+      <button type="button" class="icon-button" id="closeQuickProductModal">×</button>
+    </div>
+    <div class="product-form-grid">
+      <label><span>Название</span><input type="text" id="quickNazvanie"></label>
+      <label><span>Закупка</span><input type="number" step="1" min="0" id="quickZakupka"></label>
+      <label><span>Опт</span><input type="number" step="1" min="0" id="quickOptom"></label>
+      <label><span>Продажа</span><input type="number" step="1" min="0" id="quickProdazha"></label>
+      <label><span>Штрихкод</span><input type="text" id="quickBarcode"></label>
+    </div>
+    <div class="barcode-toolbar">
+      <button type="button" class="secondary-button" id="quickScanBarcodeButton">Сканировать</button>
+      <button type="button" class="secondary-button" id="quickGenerateBarcodeButton">Сгенерировать штрихкод</button>
+    </div>
+    <div class="modal-error" id="quickProductError"></div>
+    <div class="form-actions">
+      <button type="button" class="secondary-button" id="cancelQuickProduct">Отмена</button>
+      <button type="button" id="saveQuickProduct">Сохранить товар</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop hidden" id="scannerModal">
+  <div class="scanner-modal-card">
+    <div class="panel-head">
+      <h2>Сканирование штрихкода</h2>
+      <button type="button" class="icon-button" id="closeScannerModal">×</button>
+    </div>
+    <div id="scannerReader" class="scanner-reader"></div>
+    <div class="scanner-status" id="scannerStatusText">Наведите камеру на штрихкод.</div>
+    <div class="form-actions">
+      <button type="button" class="secondary-button" id="cancelScannerButton">Закрыть</button>
+    </div>
+  </div>
+</div>
+
+<template id="rowTemplate">
+  <tr>
+    <td class="receipt-product-cell">
+      <input type="hidden" name="product_uuid" value="">
+      <input type="hidden" name="nazvanie" value="">
+      <div class="receipt-product-main"></div>
+      <div class="product-status"></div>
+    </td>
+    <td><input type="number" step="1" min="1" name="kolichestvo" value="1" required></td>
+    <td><input type="number" step="1" min="0" name="tsena_zakupki" value="0"></td>
+    <td><input type="number" step="1" min="0" name="tsena_optom" value="0"></td>
+    <td><input type="number" step="1" min="0" name="tsena_prodazhi" value="0"></td>
+    <td><span class="calc-badge calc-opt-percent">0%</span></td>
+    <td><span class="calc-badge calc-sale-percent">0%</span></td>
+    <td><span class="calc-badge calc-purchase-sum">0</span></td>
+    <td><span class="calc-badge calc-wholesale-sum">0</span></td>
+    <td><span class="calc-badge calc-retail-sum">0</span></td>
+    <td><button type="button" class="remove-row">Удалить</button></td>
+  </tr>
+</template>
+
+<script src="https://unpkg.com/html5-qrcode" defer></script>
+<script>
+  const receiptBody = document.getElementById("receiptBody");
+  const rowTemplate = document.getElementById("rowTemplate");
+  const addFromBaseButton = document.getElementById("addFromBaseButton");
+  const addBarcodeButton = document.getElementById("addBarcodeButton");
+  const addNewProductButton = document.getElementById("addNewProductButton");
+  const addSupplierButton = document.getElementById("addSupplierButton");
+  const openPrintQueueButton = document.getElementById("openPrintQueueButton");
+  const kontragentSelect = document.getElementById("kontragentSelect");
+  const receiptForm = document.getElementById("receiptForm");
+  const saveReceiptButton = document.getElementById("saveReceiptButton");
+  const purchaseTotal = document.getElementById("purchaseTotal");
+  const wholesaleTotal = document.getElementById("wholesaleTotal");
+  const retailTotal = document.getElementById("retailTotal");
+  const productPickerModal = document.getElementById("productPickerModal");
+  const closeProductPickerModal = document.getElementById("closeProductPickerModal");
+  const productPickerSearch = document.getElementById("productPickerSearch");
+  const productPickerBody = document.getElementById("productPickerBody");
+  const productPickerCount = document.getElementById("productPickerCount");
+  const pickerEditModal = document.getElementById("pickerEditModal");
+  const closePickerEditModal = document.getElementById("closePickerEditModal");
+  const cancelPickerEdit = document.getElementById("cancelPickerEdit");
+  const savePickerEdit = document.getElementById("savePickerEdit");
+  const pickerEditAddBarcodeButton = document.getElementById("pickerEditAddBarcodeButton");
+  const pickerEditGenerateBarcodeButton = document.getElementById("pickerEditGenerateBarcodeButton");
+  const pickerEditBarcodeList = document.getElementById("pickerEditBarcodeList");
+  const pickerEditBarcodeRowTemplate = document.getElementById("pickerEditBarcodeRowTemplate");
+  const pickerEditError = document.getElementById("pickerEditError");
+  const quickProductModal = document.getElementById("quickProductModal");
+  const closeQuickProductModal = document.getElementById("closeQuickProductModal");
+  const cancelQuickProduct = document.getElementById("cancelQuickProduct");
+  const saveQuickProduct = document.getElementById("saveQuickProduct");
+  const quickScanBarcodeButton = document.getElementById("quickScanBarcodeButton");
+  const quickGenerateBarcodeButton = document.getElementById("quickGenerateBarcodeButton");
+  const quickProductError = document.getElementById("quickProductError");
+  const scannerModal = document.getElementById("scannerModal");
+  const closeScannerModal = document.getElementById("closeScannerModal");
+  const cancelScannerButton = document.getElementById("cancelScannerButton");
+  const scannerStatusText = document.getElementById("scannerStatusText");
+  const autosaveReceiptUuidInput = document.getElementById("autosaveReceiptUuid");
+  const autosaveStatus = document.getElementById("autosaveStatus");
+  const productData = {{ product_options|tojson }};
+  const autosaveEndpoint = "{{ url_for('api_postupleniya_autosave') }}";
+  let editingPickerProductUuid = "";
+  let barcodeScanner = null;
+  let scannerMode = "receipt";
+  let scannerActive = false;
+  let receiptAutosaveTimer = null;
+  let receiptAutosaveInFlight = false;
+  let receiptAutosaveQueued = false;
+  let receiptAutosaveDirty = false;
+  let receiptFormSubmitting = false;
+
+  function normalize(value) {
+    return (value || "").toString().trim().toLowerCase();
+  }
+
+  function getAutosaveReceiptUuid() {
+    return (autosaveReceiptUuidInput?.value || "").trim();
+  }
+
+  function setAutosaveReceiptUuid(value) {
+    if (autosaveReceiptUuidInput) {
+      autosaveReceiptUuidInput.value = value || "";
+    }
+  }
+
+  function setAutosaveStatus(text) {
+    if (autosaveStatus) {
+      autosaveStatus.textContent = text || "";
+    }
+  }
+
+  function serializeReceiptAutosave() {
+    return {
+      receipt_uuid: getAutosaveReceiptUuid(),
+      kontragent: kontragentSelect?.value || "",
+      rows: Array.from(receiptBody.querySelectorAll("tr"))
+        .filter((row) => !row.classList.contains("receipt-empty-row"))
+        .map((row) => ({
+          product_uuid: row.querySelector('input[name="product_uuid"]')?.value || "",
+          nazvanie: row.querySelector('input[name="nazvanie"]')?.value || row.querySelector(".receipt-product-main")?.textContent || "",
+          kolichestvo: row.querySelector('input[name="kolichestvo"]')?.value || "1",
+          tsena_zakupki: row.querySelector('input[name="tsena_zakupki"]')?.value || "0",
+          tsena_optom: row.querySelector('input[name="tsena_optom"]')?.value || "0",
+          tsena_prodazhi: row.querySelector('input[name="tsena_prodazhi"]')?.value || "0",
+        })),
+      saved_at: new Date().toISOString(),
+    };
+  }
+
+  function receiptAutosaveHasContent(snapshot) {
+    if (snapshot.kontragent) {
+      return true;
+    }
+    return snapshot.rows.some((row) => (
+      row.product_uuid || row.nazvanie || row.kolichestvo || row.tsena_zakupki || row.tsena_optom || row.tsena_prodazhi
+    ));
+  }
+
+  async function flushReceiptAutosave() {
+    const snapshot = serializeReceiptAutosave();
+    if (!getAutosaveReceiptUuid() && !receiptAutosaveHasContent(snapshot)) {
+      setAutosaveStatus("");
+      return;
+    }
+
+    if (receiptAutosaveTimer) {
+      window.clearTimeout(receiptAutosaveTimer);
+      receiptAutosaveTimer = null;
+    }
+
+    if (receiptAutosaveInFlight) {
+      receiptAutosaveQueued = true;
+      return;
+    }
+
+    receiptAutosaveInFlight = true;
+    receiptAutosaveDirty = false;
+    setAutosaveStatus("Сохранение...");
+
+    try {
+      const response = await fetch(autosaveEndpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(snapshot)
+      });
+      const result = await response.json();
+      if (!response.ok || !result.ok) {
+        setAutosaveStatus(result.error || "Не удалось сохранить изменения");
+        return;
+      }
+
+      const hadReceiptUuid = Boolean(getAutosaveReceiptUuid());
+      setAutosaveReceiptUuid(result.receipt_uuid || "");
+      if (!hadReceiptUuid && result.edit_url) {
+        window.history.replaceState({}, "", result.edit_url);
+      }
+      setAutosaveStatus("Все изменения сохранены");
+    } catch (error) {
+      setAutosaveStatus("Не удалось сохранить изменения");
+    } finally {
+      receiptAutosaveInFlight = false;
+      if (receiptAutosaveQueued || receiptAutosaveDirty) {
+        receiptAutosaveQueued = false;
+        scheduleReceiptAutosave();
+      }
+    }
+  }
+
+  function scheduleReceiptAutosave() {
+    receiptAutosaveDirty = true;
+    if (receiptAutosaveTimer) {
+      window.clearTimeout(receiptAutosaveTimer);
+    }
+    setAutosaveStatus("Сохраняем изменения...");
+    receiptAutosaveTimer = window.setTimeout(() => {
+      flushReceiptAutosave();
+    }, 500);
+  }
+
+  function scheduleReceiptDraftSave() {
+    scheduleReceiptAutosave();
+  }
+
+  function restoreReceiptDraftIfAvailable() {
+    setAutosaveStatus(getAutosaveReceiptUuid() ? "Все изменения сохранены" : "");
+  }
+
+  function formatMoney(value) {
+    const numeric = Number(value || 0);
+    return `${numeric.toLocaleString("ru-RU", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} ₸`;
+  }
+
+  function formatPercent(value) {
+    const numeric = Number(value || 0);
+    return `${numeric.toLocaleString("ru-RU", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}%`;
+  }
+
+  function buildAliases(product) {
+    const aliases = [product.nazvanie];
+    if (product.barcodes) {
+      product.barcodes.split(",").map((item) => item.trim()).filter(Boolean).forEach((barcode) => aliases.push(barcode));
+    }
+    return aliases;
+  }
+
+  function findProduct(term) {
+    const normalized = normalize(term);
+    if (!normalized) {
+      return null;
+    }
+    return productData.find((product) => buildAliases(product).some((alias) => normalize(alias) === normalized)) || null;
+  }
+
+  function findExactBarcodeMatches(term) {
+    const normalized = normalize(term);
+    if (!normalized) {
+      return [];
+    }
+    return productData.filter((product) => {
+      const barcodes = (product.barcodes || "").split(",").map((item) => item.trim()).filter(Boolean);
+      return barcodes.some((barcode) => normalize(barcode) === normalized);
+    });
+  }
+
+  function findProductForRow(row) {
+    const productUuid = row.querySelector('input[name="product_uuid"]')?.value || "";
+    const productName = row.querySelector('input[name="nazvanie"]')?.value || "";
+    return productData.find((product) => (
+      (productUuid && product.uuid === productUuid) ||
+      (!productUuid && normalize(product.nazvanie) === normalize(productName))
+    )) || null;
+  }
+
+  function setRowStatus(row, message, type) {
+    const status = row.querySelector(".product-status");
+    status.textContent = message || "";
+    status.className = `product-status ${type || ""}`.trim();
+  }
+
+  function describeProduct(product) {
+    const parts = [];
+    if (product?.kolichestvo !== undefined && product?.kolichestvo !== null) {
+      parts.push(`Остаток: ${product.kolichestvo}`);
+    }
+    if (product?.barcodes) {
+      parts.push(`Штрихкоды: ${product.barcodes}`);
+    }
+    return parts.join(" • ");
+  }
+
+  function updateRowPresentation(row, name, description, statusMessage = "", statusType = "") {
+    row.querySelector(".receipt-product-main").textContent = name || "Без названия";
+    setRowStatus(row, "", "");
+  }
+
+  function recalcRow(row) {
+    const qty = Number(row.querySelector('input[name="kolichestvo"]')?.value || 0);
+    const purchase = Number(row.querySelector('input[name="tsena_zakupki"]')?.value || 0);
+    const wholesale = Number(row.querySelector('input[name="tsena_optom"]')?.value || 0);
+    const retail = Number(row.querySelector('input[name="tsena_prodazhi"]')?.value || 0);
+
+    const optPercent = purchase > 0 ? ((wholesale - purchase) / purchase) * 100 : 0;
+    const retailPercent = purchase > 0 ? ((retail - purchase) / purchase) * 100 : 0;
+    const purchaseSum = qty * purchase;
+    const wholesaleSum = qty * wholesale;
+    const retailSum = qty * retail;
+
+    row.querySelector(".calc-opt-percent").textContent = formatPercent(optPercent);
+    row.querySelector(".calc-sale-percent").textContent = formatPercent(retailPercent);
+    row.querySelector(".calc-purchase-sum").textContent = formatMoney(purchaseSum);
+    row.querySelector(".calc-wholesale-sum").textContent = formatMoney(wholesaleSum);
+    row.querySelector(".calc-retail-sum").textContent = formatMoney(retailSum);
+  }
+
+  function recalcTotals() {
+    let purchase = 0;
+    let wholesale = 0;
+    let retail = 0;
+    receiptBody.querySelectorAll("tr").forEach((row) => {
+      purchase += Number(row.querySelector('input[name="kolichestvo"]')?.value || 0) * Number(row.querySelector('input[name="tsena_zakupki"]')?.value || 0);
+      wholesale += Number(row.querySelector('input[name="kolichestvo"]')?.value || 0) * Number(row.querySelector('input[name="tsena_optom"]')?.value || 0);
+      retail += Number(row.querySelector('input[name="kolichestvo"]')?.value || 0) * Number(row.querySelector('input[name="tsena_prodazhi"]')?.value || 0);
+    });
+    purchaseTotal.textContent = formatMoney(purchase);
+    wholesaleTotal.textContent = formatMoney(wholesale);
+    retailTotal.textContent = formatMoney(retail);
+  }
+
+  function syncRowCalculations(row) {
+    recalcRow(row);
+    recalcTotals();
+  }
+
+  function renderEmptyState() {
+    if (receiptBody.querySelector(".receipt-empty-row")) {
+      return;
+    }
+    const emptyRow = document.createElement("tr");
+    emptyRow.className = "receipt-empty-row";
+    emptyRow.innerHTML = '<td colspan="11">Товары еще не добавлены. Нажмите "Добавить из базы".</td>';
+    receiptBody.appendChild(emptyRow);
+  }
+
+  function syncEmptyState() {
+    const realRows = Array.from(receiptBody.querySelectorAll("tr")).filter((row) => !row.classList.contains("receipt-empty-row"));
+    const placeholder = receiptBody.querySelector(".receipt-empty-row");
+    if (!realRows.length) {
+      if (!placeholder) {
+        renderEmptyState();
+      }
+    } else if (placeholder) {
+      placeholder.remove();
+    }
+  }
+
+  function applyProductToRow(row, product) {
+    const qtyInput = row.querySelector('input[name="kolichestvo"]');
+    row.querySelector('input[name="product_uuid"]').value = product.uuid || "";
+    row.querySelector('input[name="nazvanie"]').value = product.nazvanie || "";
+    row.querySelector('input[name="tsena_zakupki"]').value = product.tsena_zakupki || 0;
+    row.querySelector('input[name="tsena_optom"]').value = product.tsena_optom || 0;
+    row.querySelector('input[name="tsena_prodazhi"]').value = product.tsena_prodazhi || 0;
+    if (!qtyInput.value || Number(qtyInput.value) <= 0) {
+      qtyInput.value = "1";
+    }
+    updateRowPresentation(row, product.nazvanie || "", describeProduct(product));
+    syncRowCalculations(row);
+    scheduleReceiptDraftSave();
+  }
+
+  function hydrateExistingRow(row) {
+    const product = findProductForRow(row);
+    const name = row.querySelector('input[name="nazvanie"]')?.value || "";
+    if (product) {
+      updateRowPresentation(row, name || product.nazvanie || "", describeProduct(product));
+    } else {
+      updateRowPresentation(row, name, "", "", "");
+    }
+    syncRowCalculations(row);
+  }
+
+  function findExistingRow(product) {
+    return Array.from(receiptBody.querySelectorAll("tr")).find((row) => {
+      if (row.classList.contains("receipt-empty-row")) {
+        return false;
+      }
+      const existingUuid = row.querySelector('input[name="product_uuid"]')?.value || "";
+      const existingName = row.querySelector('input[name="nazvanie"]')?.value || "";
+      return (product.uuid && existingUuid === product.uuid) || (!product.uuid && normalize(existingName) === normalize(product.nazvanie));
+    }) || null;
+  }
+
+  function bindRow(row) {
+    const removeButton = row.querySelector(".remove-row");
+    const editableInputs = row.querySelectorAll('input[name="kolichestvo"], input[name="tsena_zakupki"], input[name="tsena_optom"], input[name="tsena_prodazhi"]');
+
+    editableInputs.forEach((input) => {
+      input.addEventListener("input", () => syncRowCalculations(row));
+    });
+
+    removeButton?.addEventListener("click", () => {
+      row.remove();
+      syncEmptyState();
+      recalcTotals();
+      scheduleReceiptDraftSave();
+    });
+  }
+
+  function addEmptyRow() {
+    syncEmptyState();
+    const placeholder = receiptBody.querySelector(".receipt-empty-row");
+    if (placeholder) {
+      placeholder.remove();
+    }
+    const fragment = rowTemplate.content.cloneNode(true);
+    const row = fragment.querySelector("tr");
+    bindRow(row);
+    receiptBody.appendChild(fragment);
+    return receiptBody.querySelector("tr:last-child");
+  }
+
+  function addProductToInvoice(product) {
+    const existingRow = findExistingRow(product);
+    if (existingRow) {
+      const qtyInput = existingRow.querySelector('input[name="kolichestvo"]');
+      const currentQty = Number(qtyInput?.value || 0);
+      qtyInput.value = String((currentQty > 0 ? currentQty : 0) + 1);
+      syncRowCalculations(existingRow);
+      qtyInput.focus();
+      scheduleReceiptDraftSave();
+      return;
+    }
+
+    const row = addEmptyRow();
+    applyProductToRow(row, product);
+    row.querySelector('input[name="kolichestvo"]').focus();
+    scheduleReceiptDraftSave();
+  }
+
+  function renderProductPicker(filterValue = "") {
+    const filter = normalize(filterValue);
+    const filteredProducts = productData.filter((product) => {
+      if (!filter) {
+        return true;
+      }
+      return buildAliases(product).some((alias) => normalize(alias).includes(filter));
+    });
+
+    productPickerCount.textContent = `${filteredProducts.length} записей`;
+    productPickerBody.innerHTML = "";
+
+    if (!filteredProducts.length) {
+      const row = document.createElement("tr");
+      row.innerHTML = '<td colspan="6" class="empty">Товары не найдены.</td>';
+      productPickerBody.appendChild(row);
+      return;
+    }
+
+    filteredProducts.forEach((product) => {
+      const row = document.createElement("tr");
+      row.className = "picker-clickable-row";
+      const editUrl = "{{ url_for('nomenklatura_edit', product_uuid='__PRODUCT_UUID__') }}".replace("__PRODUCT_UUID__", product.uuid || "");
+      row.innerHTML = `
+        <td>
+          <div class="receipt-picker-name">${product.nazvanie || ""}</div>
+          <div class="receipt-picker-meta">${product.barcodes || ""}</div>
+        </td>
+        <td>${product.kolichestvo ?? ""}</td>
+        <td>${formatMoney(product.tsena_zakupki || 0)}</td>
+        <td>${formatMoney(product.tsena_optom || 0)}</td>
+        <td>${formatMoney(product.tsena_prodazhi || 0)}</td>
+        <td>
+          <div class="picker-actions">
+            <button type="button" class="secondary-button picker-add-button">Выбрать</button>
+            <button type="button" class="secondary-button picker-edit-button">Редактировать</button>
+          </div>
+        </td>
+      `;
+      row.addEventListener("click", (event) => {
+        if (event.target.closest("button")) {
+          return;
+        }
+        addProductToInvoice(product);
+        closeProductPickerModalFn();
+      });
+      row.querySelector(".picker-add-button")?.addEventListener("click", () => {
+        addProductToInvoice(product);
+        closeProductPickerModalFn();
+      });
+      row.querySelector(".picker-edit-button")?.addEventListener("click", (event) => {
+        event.stopPropagation();
+        openPickerEditModal(product);
+      });
+      productPickerBody.appendChild(row);
+    });
+  }
+
+  function openProductPickerModal() {
+    renderProductPicker(productPickerSearch.value);
+    productPickerModal.classList.remove("hidden");
+    productPickerSearch.focus();
+    productPickerSearch.select();
+  }
+
+  function closeProductPickerModalFn() {
+    productPickerModal.classList.add("hidden");
+  }
+
+  function bindPickerEditBarcodeRow(row) {
+    row.querySelector(".remove-barcode")?.addEventListener("click", () => {
+      const rows = pickerEditBarcodeList.querySelectorAll(".barcode-row");
+      if (rows.length > 1) {
+        row.remove();
+      } else {
+        row.querySelector('[data-role="barcode-uuid"]').value = "";
+        row.querySelector('[data-role="barcode-value"]').value = "";
+      }
+    });
+  }
+
+  function addPickerEditBarcodeRow(barcode = {}) {
+    const fragment = pickerEditBarcodeRowTemplate.content.cloneNode(true);
+    const row = fragment.querySelector(".barcode-row");
+    row.querySelector('[data-role="barcode-uuid"]').value = barcode.uuid || "";
+    row.querySelector('[data-role="barcode-value"]').value = barcode.shtrih_kod || "";
+    bindPickerEditBarcodeRow(row);
+    pickerEditBarcodeList.appendChild(fragment);
+    return pickerEditBarcodeList.querySelector(".barcode-row:last-child");
+  }
+
+  function getPickerEditBarcodeRows() {
+    return Array.from(pickerEditBarcodeList.querySelectorAll(".barcode-row")).map((row) => ({
+      uuid: row.querySelector('[data-role="barcode-uuid"]')?.value || "",
+      shtrih_kod: row.querySelector('[data-role="barcode-value"]')?.value || ""
+    }));
+  }
+
+  function fillPickerEditForm(product) {
+    editingPickerProductUuid = product.uuid || "";
+    document.getElementById("pickerEditNazvanie").value = product.nazvanie || "";
+    document.getElementById("pickerEditZakupka").value = product.tsena_zakupki || 0;
+    document.getElementById("pickerEditOptom").value = product.tsena_optom || 0;
+    document.getElementById("pickerEditProdazha").value = product.tsena_prodazhi || 0;
+    pickerEditBarcodeList.innerHTML = "";
+    const barcodeRows = Array.isArray(product.barcode_rows) && product.barcode_rows.length
+      ? product.barcode_rows
+      : (product.barcodes || "")
+          .split(",")
+          .map((barcode) => ({ uuid: "", shtrih_kod: barcode.trim() }))
+          .filter((row) => row.shtrih_kod);
+
+    if (barcodeRows.length) {
+      barcodeRows.forEach((barcodeRow) => addPickerEditBarcodeRow(barcodeRow));
+    } else {
+      addPickerEditBarcodeRow();
+    }
+  }
+
+  async function openPickerEditModal(product) {
+    pickerEditError.textContent = "";
+    let productForEdit = product;
+    if (product?.uuid) {
+      try {
+        const response = await fetch(`/api/products/${product.uuid}`);
+        const result = await response.json();
+        if (!result.ok) {
+          pickerEditError.textContent = result.error || "Не удалось загрузить товар.";
+          return;
+        }
+        productForEdit = result.product;
+      } catch (error) {
+        pickerEditError.textContent = "Не удалось загрузить товар.";
+        return;
+      }
+    }
+    fillPickerEditForm(productForEdit);
+    pickerEditModal.classList.remove("hidden");
+    document.getElementById("pickerEditNazvanie").focus();
+  }
+
+  function closePickerEditModalFn() {
+    pickerEditModal.classList.add("hidden");
+    pickerEditError.textContent = "";
+    editingPickerProductUuid = "";
+  }
+
+  function replaceProductInData(updatedProduct) {
+    const index = productData.findIndex((item) => item.uuid === updatedProduct.uuid);
+    if (index >= 0) {
+      productData[index] = { ...productData[index], ...updatedProduct };
+    } else {
+      productData.push(updatedProduct);
+    }
+    receiptBody.querySelectorAll("tr").forEach((row) => {
+      if (row.classList.contains("receipt-empty-row")) {
+        return;
+      }
+      const rowUuid = row.querySelector('input[name="product_uuid"]')?.value || "";
+      if (rowUuid && rowUuid === updatedProduct.uuid) {
+        applyProductToRow(row, updatedProduct);
+      }
+    });
+  }
+
+  function processBarcodePrompt(mode = "receipt") {
+    const barcode = window.prompt("Введите штрихкод товара:");
+    if (!barcode || !barcode.trim()) {
+      return;
+    }
+    const normalized = barcode.trim();
+    if (mode === "quick-product") {
+      handleQuickProductBarcode(normalized);
+      return;
+    }
+    handleReceiptBarcode(normalized);
+  }
+
+  function openQuickProductModal(options = {}) {
+    const { barcode = "", message = "", preserveName = false } = options;
+    quickProductError.textContent = message;
+    if (!preserveName) {
+      document.getElementById("quickNazvanie").value = "";
+      document.getElementById("quickZakupka").value = "";
+      document.getElementById("quickOptom").value = "";
+      document.getElementById("quickProdazha").value = "";
+    }
+    document.getElementById("quickBarcode").value = barcode;
+    quickProductModal.classList.remove("hidden");
+    if (barcode) {
+      document.getElementById("quickNazvanie").focus();
+    } else {
+      document.getElementById("quickNazvanie").focus();
+    }
+  }
+
+  function closeQuickProductModalFn() {
+    quickProductModal.classList.add("hidden");
+  }
+
+  function handleReceiptBarcode(barcode) {
+    const normalized = (barcode || "").trim();
+    if (!normalized) {
+      return;
+    }
+    const exactBarcodeMatches = findExactBarcodeMatches(normalized);
+    if (exactBarcodeMatches.length > 1) {
+      productPickerSearch.value = normalized;
+      renderProductPicker(normalized);
+      productPickerModal.classList.remove("hidden");
+      productPickerSearch.focus();
+      productPickerSearch.select();
+      return;
+    }
+    if (exactBarcodeMatches.length === 1) {
+      addProductToInvoice(exactBarcodeMatches[0]);
+      return;
+    }
+    const product = findProduct(normalized);
+    if (!product) {
+      openQuickProductModal({
+        barcode: normalized,
+        message: "Товар не найден. Можно создать новый товар с этим штрихкодом."
+      });
+      return;
+    }
+    addProductToInvoice(product);
+  }
+
+  async function stopScanner() {
+    if (barcodeScanner && scannerActive) {
+      try {
+        await barcodeScanner.stop();
+      } catch (error) {
+      }
+    }
+    if (barcodeScanner) {
+      try {
+        await barcodeScanner.clear();
+      } catch (error) {
+      }
+    }
+    const scannerReader = document.getElementById("scannerReader");
+    if (scannerReader) {
+      scannerReader.querySelectorAll("video").forEach((video) => {
+        const stream = video.srcObject;
+        if (stream && typeof stream.getTracks === "function") {
+          stream.getTracks().forEach((track) => {
+            try {
+              track.stop();
+            } catch (error) {
+            }
+          });
+        }
+        try {
+          video.pause();
+        } catch (error) {
+        }
+        video.srcObject = null;
+      });
+      scannerReader.innerHTML = "";
+    }
+    scannerActive = false;
+    barcodeScanner = null;
+  }
+
+  async function closeScannerModalFn() {
+    await stopScanner();
+    scannerModal.classList.add("hidden");
+    scannerStatusText.textContent = "Наведите камеру на штрихкод.";
+  }
+
+  function handleQuickProductBarcode(barcode) {
+    const normalized = (barcode || "").trim();
+    if (!normalized) {
+      return;
+    }
+    document.getElementById("quickBarcode").value = normalized;
+    quickProductError.textContent = "";
+    document.getElementById("quickBarcode").focus();
+    document.getElementById("quickBarcode").select();
+  }
+
+  async function handleScannedBarcode(decodedText) {
+    const barcode = (decodedText || "").trim();
+    if (!barcode) {
+      return;
+    }
+    if (scannerMode === "quick-product") {
+      await closeScannerModalFn();
+      handleQuickProductBarcode(barcode);
+      return;
+    }
+    await closeScannerModalFn();
+    handleReceiptBarcode(barcode);
+  }
+
+  async function openScannerModalFn(mode) {
+    scannerMode = mode;
+    if (!window.Html5Qrcode) {
+      processBarcodePrompt(mode);
+      return;
+    }
+
+    await stopScanner();
+    scannerStatusText.textContent = "Открываем камеру...";
+    scannerModal.classList.remove("hidden");
+    const scannerReader = document.getElementById("scannerReader");
+    if (scannerReader) {
+      scannerReader.innerHTML = "";
+    }
+    barcodeScanner = new Html5Qrcode("scannerReader");
+    const config = {
+      fps: 10,
+      qrbox: { width: 260, height: 140 },
+      aspectRatio: 1.7778,
+      formatsToSupport: [
+        Html5QrcodeSupportedFormats.EAN_13,
+        Html5QrcodeSupportedFormats.EAN_8,
+        Html5QrcodeSupportedFormats.CODE_128,
+        Html5QrcodeSupportedFormats.CODE_39,
+        Html5QrcodeSupportedFormats.UPC_A,
+        Html5QrcodeSupportedFormats.UPC_E
+      ]
+    };
+
+    async function applyDefaultCameraZoom() {
+      const video = document.querySelector("#scannerReader video");
+      const track = video?.srcObject?.getVideoTracks?.()[0];
+      const capabilities = track?.getCapabilities?.();
+      if (!capabilities?.zoom) {
+        return;
+      }
+      const zoom = Math.min(capabilities.zoom.max, Math.max(capabilities.zoom.min, 2));
+      await track.applyConstraints({ advanced: [{ zoom }] });
+    }
+
+    const startWith = async (cameraConfig) => {
+      await barcodeScanner.start(
+        cameraConfig,
+        config,
+        async (decodedText) => {
+          if (!scannerActive) {
+            return;
+          }
+          scannerStatusText.textContent = `Найдено: ${decodedText}`;
+          await handleScannedBarcode(decodedText);
+        },
+        () => {}
+      );
+      scannerActive = true;
+      try {
+        await applyDefaultCameraZoom();
+      } catch (_) {
+        // Some phones do not expose camera zoom controls.
+      }
+      scannerStatusText.textContent = "Наведите камеру на штрихкод.";
+    };
+
+    try {
+      await startWith({ facingMode: { exact: "environment" } });
+    } catch (error) {
+      try {
+        await startWith({ facingMode: "environment" });
+      } catch (fallbackError) {
+        scannerModal.classList.add("hidden");
+        scannerStatusText.textContent = "Не удалось открыть камеру. Разрешите доступ или попробуйте снова.";
+        const message = "Не удалось открыть камеру. Разрешите доступ или введите штрихкод вручную.";
+        if (mode === "quick-product") {
+          openQuickProductModal({ barcode: document.getElementById("quickBarcode").value, message, preserveName: true });
+        }
+        if (mode !== "quick-product") {
+          window.alert(message);
+        }
+        processBarcodePrompt(mode);
+      }
+    }
+  }
+
+  addFromBaseButton?.addEventListener("click", openProductPickerModal);
+  closeProductPickerModal?.addEventListener("click", closeProductPickerModalFn);
+  productPickerSearch?.addEventListener("input", () => renderProductPicker(productPickerSearch.value));
+  closePickerEditModal?.addEventListener("click", closePickerEditModalFn);
+  cancelPickerEdit?.addEventListener("click", closePickerEditModalFn);
+  pickerEditAddBarcodeButton?.addEventListener("click", () => {
+    const row = addPickerEditBarcodeRow();
+    row?.querySelector('[data-role="barcode-value"]')?.focus();
+  });
+  pickerEditGenerateBarcodeButton?.addEventListener("click", async () => {
+    pickerEditError.textContent = "";
+    pickerEditGenerateBarcodeButton.disabled = true;
+    try {
+      const response = await fetch("{{ url_for('api_products_next_barcode') }}");
+      const result = await response.json();
+      if (!result.ok) {
+        pickerEditError.textContent = result.error || "Не удалось сгенерировать штрихкод.";
+        return;
+      }
+      const rows = Array.from(pickerEditBarcodeList.querySelectorAll(".barcode-row"));
+      let targetRow = rows.find((row) => !(row.querySelector('[data-role="barcode-value"]')?.value || "").trim());
+      if (!targetRow) {
+        targetRow = addPickerEditBarcodeRow();
+      }
+      const input = targetRow?.querySelector('[data-role="barcode-value"]');
+      if (input) {
+        input.value = result.barcode || "";
+        input.focus();
+        input.select();
+      }
+    } catch (error) {
+      pickerEditError.textContent = "Не удалось сгенерировать штрихкод.";
+    } finally {
+      pickerEditGenerateBarcodeButton.disabled = false;
+    }
+  });
+
+  addBarcodeButton?.addEventListener("click", () => openScannerModalFn("receipt"));
+  addNewProductButton?.addEventListener("click", openQuickProductModal);
+
+  addSupplierButton?.addEventListener("click", () => {
+    const supplierName = window.prompt("Введите название нового контрагента:");
+    if (!supplierName || !supplierName.trim()) {
+      return;
+    }
+    const trimmedName = supplierName.trim();
+    const existingOption = Array.from(kontragentSelect.options).find((option) => option.value === trimmedName);
+    if (existingOption) {
+      kontragentSelect.value = trimmedName;
+      return;
+    }
+    const option = document.createElement("option");
+    option.value = trimmedName;
+    option.textContent = trimmedName;
+    option.selected = true;
+    kontragentSelect.appendChild(option);
+    scheduleReceiptDraftSave();
+  });
+
+  openPrintQueueButton?.addEventListener("click", () => {
+    const productIds = Array.from(document.querySelectorAll('input[name="product_uuid"]'))
+      .map((input) => (input.value || "").trim())
+      .filter(Boolean);
+    if (!productIds.length) {
+      window.open("{{ url_for('barcode_print_queue') }}", "_blank");
+      return;
+    }
+    const uniqueIds = Array.from(new Set(productIds));
+    const targetUrl = "{{ url_for('barcode_print_queue') }}" + `?products=${encodeURIComponent(uniqueIds.join(","))}`;
+    window.open(targetUrl, "_blank");
+  });
+
+  receiptForm?.addEventListener("submit", async (event) => {
+    if (receiptFormSubmitting || saveReceiptButton.disabled) {
+      return;
+    }
+    event.preventDefault();
+    receiptFormSubmitting = true;
+    saveReceiptButton.disabled = true;
+    saveReceiptButton.textContent = "Сохранение...";
+    try {
+      await flushReceiptAutosave();
+    } catch (error) {
+    }
+    receiptForm.submit();
+  });
+
+  receiptForm?.addEventListener("input", () => {
+    scheduleReceiptDraftSave();
+  });
+
+  receiptForm?.addEventListener("change", () => {
+    scheduleReceiptDraftSave();
+  });
+
+  closeQuickProductModal?.addEventListener("click", closeQuickProductModalFn);
+  cancelQuickProduct?.addEventListener("click", closeQuickProductModalFn);
+  closeScannerModal?.addEventListener("click", closeScannerModalFn);
+  cancelScannerButton?.addEventListener("click", closeScannerModalFn);
+  quickScanBarcodeButton?.addEventListener("click", () => openScannerModalFn("quick-product"));
+
+  quickGenerateBarcodeButton?.addEventListener("click", async () => {
+    quickProductError.textContent = "";
+    quickGenerateBarcodeButton.disabled = true;
+    try {
+      const response = await fetch("{{ url_for('api_products_next_barcode') }}");
+      const result = await response.json();
+      if (!result.ok) {
+        quickProductError.textContent = result.error || "Не удалось сгенерировать штрихкод.";
+        return;
+      }
+      document.getElementById("quickBarcode").value = result.barcode || "";
+      document.getElementById("quickBarcode").focus();
+      document.getElementById("quickBarcode").select();
+    } catch (error) {
+      quickProductError.textContent = "Не удалось сгенерировать штрихкод.";
+    } finally {
+      quickGenerateBarcodeButton.disabled = false;
+    }
+  });
+
+  saveQuickProduct?.addEventListener("click", async () => {
+    quickProductError.textContent = "";
+    saveQuickProduct.disabled = true;
+    const payload = {
+      nazvanie: document.getElementById("quickNazvanie").value,
+      shtrih_kod: document.getElementById("quickBarcode").value,
+      tsena_zakupki: document.getElementById("quickZakupka").value,
+      tsena_optom: document.getElementById("quickOptom").value,
+      tsena_prodazhi: document.getElementById("quickProdazha").value
+    };
+
+    try {
+      const response = await fetch("{{ url_for('api_products_quick_create') }}", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const result = await response.json();
+      if (!result.ok) {
+        quickProductError.textContent = result.error || "Не удалось создать товар.";
+        return;
+      }
+
+      productData.push(result.product);
+      addProductToInvoice(result.product);
+      renderProductPicker(productPickerSearch.value);
+      closeQuickProductModalFn();
+    } catch (error) {
+      quickProductError.textContent = "Не удалось сохранить товар. Проверьте соединение.";
+    } finally {
+      saveQuickProduct.disabled = false;
+    }
+  });
+
+  savePickerEdit?.addEventListener("click", async () => {
+    pickerEditError.textContent = "";
+    if (!editingPickerProductUuid) {
+      pickerEditError.textContent = "Не удалось определить товар для редактирования.";
+      return;
+    }
+    savePickerEdit.disabled = true;
+    const payload = {
+      nazvanie: document.getElementById("pickerEditNazvanie").value,
+      tsena_zakupki: document.getElementById("pickerEditZakupka").value,
+      tsena_optom: document.getElementById("pickerEditOptom").value,
+      tsena_prodazhi: document.getElementById("pickerEditProdazha").value,
+      barcode_rows: getPickerEditBarcodeRows()
+    };
+
+    try {
+      const response = await fetch(`/api/products/${editingPickerProductUuid}/picker-update`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const result = await response.json();
+      if (!result.ok) {
+        pickerEditError.textContent = result.error || "Не удалось сохранить товар.";
+        return;
+      }
+      replaceProductInData(result.product);
+      renderProductPicker(productPickerSearch.value);
+      closePickerEditModalFn();
+    } catch (error) {
+      pickerEditError.textContent = "Не удалось сохранить товар. Проверьте соединение.";
+    } finally {
+      savePickerEdit.disabled = false;
+    }
+  });
+
+  receiptBody.querySelectorAll("tr").forEach((row) => {
+    bindRow(row);
+    hydrateExistingRow(row);
+  });
+  syncEmptyState();
+  recalcTotals();
+  restoreReceiptDraftIfAvailable();
+</script>
+{% endblock %}

@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+{% block title %}{{ form_title }} | Касса Online{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">Номенклатура</p>
+    <h1>{{ form_title }}</h1>
+  </div>
+  <div class="action-row">
+    <a class="secondary-button link-button" href="{{ url_for('nomenklatura') }}">К списку</a>
+  </div>
+</section>
+
+{% if form_error %}
+<div class="alert">
+  <strong>Не удалось сохранить товар.</strong>
+  <span>{{ form_error }}</span>
+</div>
+{% endif %}
+
+<section class="panel product-create-card">
+  <form method="post" class="product-create-form" id="newProductForm">
+    <div class="product-create-head">
+      <div>
+        <h2>Добавление нового товара</h2>
+        <p class="product-subtitle">Как в десктопной кассе: сначала название, затем штрихкоды. Цены и остаток начнутся с нуля.</p>
+      </div>
+    </div>
+
+    <label class="product-field product-field-wide">
+      <span>Наименование товара</span>
+      <input type="text" name="nazvanie" id="newProductName" value="{{ form_data.nazvanie or '' }}" required autofocus>
+    </label>
+
+    <section class="barcode-editor-block">
+      <div class="panel-head">
+        <div>
+          <h2>Штрихкоды</h2>
+          <p class="product-subtitle">Можно добавить вручную или сгенерировать следующий свободный.</p>
+        </div>
+      </div>
+
+      <div class="barcode-toolbar">
+        <button type="button" class="secondary-button" id="addBarcodeManualButton">Добавить вручную</button>
+        <button type="button" class="secondary-button" id="generateBarcodeButton">Сгенерировать штрихкод</button>
+      </div>
+
+      <div class="barcode-list" id="barcodeList">
+        {% if form_data.barcode_rows %}
+          {% for barcode in form_data.barcode_rows %}
+          <div class="barcode-row">
+            <input type="hidden" name="barcode_uuid" value="{{ barcode.uuid or '' }}">
+            <input type="text" name="barcodes" value="{{ barcode.shtrih_kod or '' }}" placeholder="Штрихкод">
+            <button type="button" class="remove-barcode">Удалить</button>
+          </div>
+          {% endfor %}
+        {% else %}
+          <div class="barcode-row">
+            <input type="hidden" name="barcode_uuid" value="">
+            <input type="text" name="barcodes" value="" placeholder="Штрихкод">
+            <button type="button" class="remove-barcode">Удалить</button>
+          </div>
+        {% endif %}
+      </div>
+
+      <template id="barcodeRowTemplate">
+        <div class="barcode-row">
+          <input type="hidden" name="barcode_uuid" value="">
+          <input type="text" name="barcodes" value="" placeholder="Штрихкод">
+          <button type="button" class="remove-barcode">Удалить</button>
+        </div>
+      </template>
+
+      <div class="barcode-note">
+        <strong>Подсказка</strong>
+        <span>Если в поле названия вставить длинный цифровой код, он автоматически улетит в список штрихкодов, как в десктопной версии.</span>
+      </div>
+    </section>
+
+    <div class="product-action-strip">
+      <button type="submit">{{ submit_label }}</button>
+    </div>
+  </form>
+</section>
+
+<script>
+  (() => {
+    const form = document.getElementById("newProductForm");
+    const nameInput = document.getElementById("newProductName");
+    const barcodeList = document.getElementById("barcodeList");
+    const rowTemplate = document.getElementById("barcodeRowTemplate");
+    const addManualButton = document.getElementById("addBarcodeManualButton");
+    const generateBarcodeButton = document.getElementById("generateBarcodeButton");
+
+    if (!form || !nameInput || !barcodeList || !rowTemplate) {
+      return;
+    }
+
+    const rusToEngLayout = {
+      "й":"q","ц":"w","у":"e","к":"r","е":"t","н":"y","г":"u","ш":"i","щ":"o","з":"p",
+      "ф":"a","ы":"s","в":"d","а":"f","п":"g","р":"h","о":"j","л":"k","д":"l",
+      "я":"z","ч":"x","с":"c","м":"v","и":"b","т":"n","ь":"m",
+      "Й":"Q","Ц":"W","У":"E","К":"R","Е":"T","Н":"Y","Г":"U","Ш":"I","Щ":"O","З":"P",
+      "Ф":"A","Ы":"S","В":"D","А":"F","П":"G","Р":"H","О":"J","Л":"K","Д":"L",
+      "Я":"Z","Ч":"X","С":"C","М":"V","И":"B","Т":"N","Ь":"M",
+      "б":",","ю":".","Б":"<","Ю":">","ё":"`","Ё":"~"
+    };
+
+    const translateByLayout = (text) => Array.from(text || "").map((char) => rusToEngLayout[char] ?? char).join("");
+
+    const bindRow = (row) => {
+      const input = row.querySelector('input[name="barcodes"]');
+      const removeButton = row.querySelector(".remove-barcode");
+
+      input?.addEventListener("blur", () => {
+        input.value = translateByLayout(input.value.trim());
+      });
+
+      removeButton?.addEventListener("click", () => {
+        row.remove();
+      });
+    };
+
+    const addBarcodeRow = (value = "", focus = true) => {
+      const fragment = rowTemplate.content.cloneNode(true);
+      const row = fragment.querySelector(".barcode-row");
+      const input = row.querySelector('input[name="barcodes"]');
+      if (input) {
+        input.value = value;
+      }
+      bindRow(row);
+      barcodeList.appendChild(fragment);
+      const createdRow = barcodeList.querySelector(".barcode-row:last-child");
+      if (focus) {
+        createdRow?.querySelector('input[name="barcodes"]')?.focus();
+      }
+      return createdRow;
+    };
+
+    addManualButton?.addEventListener("click", () => addBarcodeRow());
+
+    generateBarcodeButton?.addEventListener("click", async () => {
+      generateBarcodeButton.disabled = true;
+      try {
+        const response = await fetch("{{ url_for('api_products_next_barcode') }}");
+        const result = await response.json();
+        if (!result.ok) {
+          window.alert(result.error || "Не удалось сгенерировать штрихкод.");
+          return;
+        }
+        addBarcodeRow(result.barcode);
+      } catch (error) {
+        window.alert("Не удалось сгенерировать штрихкод.");
+      } finally {
+        generateBarcodeButton.disabled = false;
+      }
+    });
+
+    nameInput.addEventListener("input", () => {
+      const value = nameInput.value.trim();
+      if (/^\d{13,}$/.test(value)) {
+        addBarcodeRow(value);
+        nameInput.value = "";
+        nameInput.focus();
+      }
+    });
+
+    form.addEventListener("keydown", async (event) => {
+      if (!(event.ctrlKey || event.metaKey)) {
+        return;
+      }
+
+      const key = event.key.toLowerCase();
+      if (key === "s") {
+        event.preventDefault();
+        form.requestSubmit();
+      }
+      if (key === "d") {
+        event.preventDefault();
+        addBarcodeRow();
+      }
+      if (key === "g") {
+        event.preventDefault();
+        generateBarcodeButton.click();
+      }
+    });
+
+    barcodeList.querySelectorAll(".barcode-row").forEach(bindRow);
+  })();
+</script>
+{% endblock %}

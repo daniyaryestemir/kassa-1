@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Номенклатура | Касса Online{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">Склад</p>
+    <h1>Номенклатура</h1>
+  </div>
+</section>
+
+<section class="toolbar">
+  <form class="search-form" method="get">
+    <input type="text" name="q" value="{{ search }}" placeholder="Поиск по названию или UUID">
+    <button type="submit">Найти</button>
+  </form>
+  <a class="ghost-link" href="{{ url_for('nomenklatura_new') }}">Новый товар</a>
+</section>
+
+{% if deleted %}
+<div class="success-box">
+  <strong>Товар успешно удален.</strong>
+</div>
+{% endif %}
+
+{% if delete_error %}
+<div class="alert">
+  <strong>Не удалось удалить товар.</strong>
+  <span>{{ delete_error }}</span>
+</div>
+{% endif %}
+
+{% if request.args.get('created') == '1' %}
+<div class="success-box">
+  <strong>Товар успешно создан.</strong>
+</div>
+{% endif %}
+
+{% if request.args.get('updated') == '1' %}
+<div class="success-box">
+  <strong>Товар успешно обновлен.</strong>
+</div>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>Товары</h2>
+    <span class="mono">{{ products|length }} записей</span>
+  </div>
+    <div class="table-wrap">
+      <table class="nomenklatura-table">
+      <thead>
+        <tr>
+          <th>Название</th>
+          <th>Остаток</th>
+          <th>Закупка</th>
+          <th>Продажа</th>
+          <th>Опт</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in products %}
+        <tr class="clickable-row" data-href="{{ url_for('nomenklatura_edit', product_uuid=item.uuid) }}">
+          <td>{{ item.nazvanie }}</td>
+          <td><span class="stock {{ 'danger' if item.kolichestvo <= 5 else '' }}">{{ item.kolichestvo }}</span></td>
+          <td>{{ item.tsena_zakupki|money }} ₸</td>
+          <td>{{ item.tsena_prodazhi|money }} ₸</td>
+          <td>{{ item.tsena_optom|money }} ₸</td>
+          <td><span class="row-link">Изменить</span></td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="6" class="empty">Товары не найдены.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+<script>
+  document.querySelectorAll(".clickable-row").forEach((row) => {
+    row.addEventListener("click", () => {
+      const href = row.dataset.href;
+      if (href) {
+        window.location.href = href;
+      }
+    });
+  });
+</script>
+{% endblock %}

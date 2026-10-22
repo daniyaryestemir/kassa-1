@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Поступления | Касса Online{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <p class="eyebrow">Основной раздел</p>
+    <h1>Поступления товаров</h1>
+  </div>
+</section>
+
+<section class="toolbar">
+  <form class="search-form" method="get">
+    <input type="text" name="q" value="{{ search }}" placeholder="Поиск по контрагенту или UUID">
+    <button type="submit">Найти</button>
+  </form>
+  <a class="ghost-link" href="{{ url_for('postupleniya_new') }}">Новое поступление</a>
+</section>
+
+{% if deleted %}
+<div class="success-box">
+  <strong>Поступление успешно удалено.</strong>
+</div>
+{% endif %}
+
+{% if delete_error %}
+<div class="alert">
+  <strong>Не удалось удалить поступление.</strong>
+  <span>{{ delete_error }}</span>
+</div>
+{% endif %}
+
+{% if request.args.get('created') == '1' %}
+<div class="success-box">
+  <strong>Поступление успешно сохранено.</strong>
+</div>
+{% endif %}
+
+{% if request.args.get('updated') == '1' %}
+<div class="success-box">
+  <strong>Поступление успешно обновлено.</strong>
+</div>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>Список поступлений</h2>
+    <span class="mono">{{ receipts|length }} записей</span>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>№</th>
+          <th>Контрагент</th>
+          <th>Дата</th>
+          <th>Сумма закупки</th>
+          <th>Опт</th>
+          <th>Сумма продажи</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in receipts %}
+        <tr class="clickable-row" data-href="{{ url_for('postuplenie_edit', receipt_uuid=item.uuid) }}">
+          <td>{{ item.id }}</td>
+          <td>{{ item.kontragent }}</td>
+          <td>{{ item.data|dt }}</td>
+          <td>{{ item.summa_postupleni|money }} ₸</td>
+          <td>{{ item.summa_optom|money }} ₸</td>
+          <td>{{ item.summa_prodazhi|money }} ₸</td>
+          <td><span class="row-link">Редактировать</span></td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="7" class="empty">Ничего не найдено.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+<script>
+  document.querySelectorAll(".clickable-row").forEach((row) => {
+    row.addEventListener("click", () => {
+      const href = row.dataset.href;
+      if (href) {
+        window.location.href = href;
+      }
+    });
+  });
+</script>
+{% endblock %}
